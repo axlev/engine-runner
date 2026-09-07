@@ -26,6 +26,14 @@ const (
 	StageReasoner3 Stage = "reasoner-3" // adversarial verification
 )
 
+// AttemptEnvKey is a reserved RunRequest.Environment key the caller may set
+// to a 1-based attempt number ("1", "2", ...) before each attempt of the
+// same stage. It is not part of what an adapter must honor - a real vendor
+// adapter is free to ignore it - but it lets a deterministic test adapter
+// (FixtureAdapter) define different behavior per attempt, e.g. failing once
+// and succeeding on retry, without becoming stateful itself.
+const AttemptEnvKey = "ENGINE_ATTEMPT"
+
 // Budget bounds a single stage execution. The adapter is responsible for
 // enforcing what it can (e.g. token limits passed to the vendor API) and for
 // reporting Usage so the runner can enforce the rest (e.g. wall-clock

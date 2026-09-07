@@ -1,0 +1,57 @@
+# Pilot v1 protocol - Milestone 1 fixture-only vertical slice.
+#
+# This is the frozen configuration for one cohort: which adapter to invoke,
+# which handoffs are enabled, and each stage's prompt, model, budget, and
+# output schema. Per design principle 6, prompts and settings here are not
+# tuned per case; per principle 5, every field here is what makes a run
+# reproducible.
+#
+# All paths are relative to the repository root.
+
+protocol_version: pilot-v1
+adapter: fixture
+
+handoffs:
+  # Section 6.4: "Pilot v1 enables this handoff."
+  enable_a_to_b: true
+
+retry_policy:
+  # One repair attempt on invalid structured output (section 12).
+  max_attempts: 2
+
+stages:
+  reasoner-1:
+    prompt: fixtures/prompts/placeholder.md
+    model: fixture-model
+    reasoning_level: standard
+    output_schema: schemas/review-a.schema.json
+    budget:
+      max_input_tokens: 16000
+      max_output_tokens: 2000
+      max_wall_clock_seconds: 300
+      max_tool_calls: 20
+      max_cost_usd: 0.50
+
+  reasoner-2:
+    prompt: fixtures/prompts/placeholder.md
+    model: fixture-model
+    reasoning_level: standard
+    output_schema: schemas/review-b.schema.json
+    budget:
+      max_input_tokens: 20000
+      max_output_tokens: 2000
+      max_wall_clock_seconds: 300
+      max_tool_calls: 20
+      max_cost_usd: 0.50
+
+  reasoner-3:
+    prompt: fixtures/prompts/placeholder.md
+    model: fixture-model
+    reasoning_level: standard
+    output_schema: schemas/review-c.schema.json
+    budget:
+      max_input_tokens: 20000
+      max_output_tokens: 1500
+      max_wall_clock_seconds: 300
+      max_tool_calls: 20
+      max_cost_usd: 0.50

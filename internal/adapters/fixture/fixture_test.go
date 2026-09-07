@@ -198,7 +198,7 @@ func TestRetryThenSuccessAndIdempotency(t *testing.T) {
 
 	ws1 := t.TempDir()
 	_, err := a.Run(context.Background(), request("retry-then-success", adapters.StageReasoner1, ws1, map[string]string{
-		AttemptEnvKey: "1",
+		adapters.AttemptEnvKey: "1",
 	}))
 	if err == nil {
 		t.Fatalf("attempt 1: expected simulated failure, got nil error")
@@ -212,7 +212,7 @@ func TestRetryThenSuccessAndIdempotency(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		ws := t.TempDir()
 		res, err := a.Run(context.Background(), request("retry-then-success", adapters.StageReasoner1, ws, map[string]string{
-			AttemptEnvKey: "2",
+			adapters.AttemptEnvKey: "2",
 		}))
 		if err != nil {
 			t.Fatalf("attempt 2 (call %d): unexpected error: %v", i, err)

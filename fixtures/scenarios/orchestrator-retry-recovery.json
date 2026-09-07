@@ -1,0 +1,21 @@
+{
+  "name": "orchestrator-retry-recovery",
+  "description": "Reasoner 1 fails its first attempt and recovers on retry; reasoner 2 and 3 succeed on the first try. Exercises the orchestrator's retry policy across a full three-stage run, reusing the happy-path responses so downstream stages see realistic content.",
+  "stages": {
+    "reasoner-1": {
+      "usage": { "input_tokens": 8200, "output_tokens": 950, "tool_calls": 4, "cost_usd": 0.041 },
+      "default": { "kind": "success", "response_path": "responses/happy-path/reasoner-1.json" },
+      "attempts": {
+        "1": { "kind": "exit", "exit_code": 1 }
+      }
+    },
+    "reasoner-2": {
+      "usage": { "input_tokens": 9100, "output_tokens": 1100, "tool_calls": 6, "cost_usd": 0.052 },
+      "default": { "kind": "success", "response_path": "responses/happy-path/reasoner-2.json" }
+    },
+    "reasoner-3": {
+      "usage": { "input_tokens": 7600, "output_tokens": 700, "tool_calls": 3, "cost_usd": 0.037 },
+      "default": { "kind": "success", "response_path": "responses/happy-path/reasoner-3.json" }
+    }
+  }
+}

@@ -22,14 +22,6 @@ import (
 	"github.com/axlev/engine-runner/internal/adapters"
 )
 
-// AttemptEnvKey is a fixture-only convention, not part of the AgentAdapter
-// contract: the runner may set RunRequest.Environment[AttemptEnvKey] to a
-// 1-based attempt number ("1", "2", ...) before each attempt so a scenario
-// can define different behavior per attempt (e.g. fail once, then succeed).
-// Real vendor adapters ignore unrecognized environment keys, so this has no
-// effect outside fixture-driven tests.
-const AttemptEnvKey = "ENGINE_ATTEMPT"
-
 const adapterName = "fixture"
 const adapterVersion = "fixture/v1"
 
@@ -86,7 +78,7 @@ func (f *FixtureAdapter) Run(ctx context.Context, req adapters.RunRequest) (adap
 		return adapters.RunResult{}, fmt.Errorf("fixture: scenario %q defines no behavior for stage %q", scenario.Name, req.Stage)
 	}
 
-	attempt := req.Environment[AttemptEnvKey]
+	attempt := req.Environment[adapters.AttemptEnvKey]
 	if attempt == "" {
 		attempt = "1"
 	}
