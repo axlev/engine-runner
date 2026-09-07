@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engine-runner.internal/schemas/run-result.schema.json",
+  "title": "Run result",
+  "description": "The sealed, top-level record for one engine-runner run: protocol and version fingerprints plus per-stage outcomes. Written to data/results/<run-id>/run.json only after all stages have completed and are validated.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "case_id",
+    "protocol_version",
+    "created_at",
+    "sealed_at",
+    "status",
+    "fingerprints",
+    "stages"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "run-result/v1" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "case_id": { "type": "string", "minLength": 1 },
+    "protocol_version": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "sealed_at": { "type": "string", "format": "date-time" },
+    "status": {
+      "type": "string",
+      "enum": ["completed", "failed", "invalidated"]
+    },
+    "invalidation_reason": {
+      "type": "string",
+      "description": "Required when status is invalidated, e.g. a boundary-validation failure or a contamination report during a reasoning stage."
+    },
+    "fingerprints": { "$ref": "#/$defs/fingerprints" },
+    "stages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/stage_outcome" }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "invalidated" } } },
+      "then": { "required": ["invalidation_reason"] }
+    }
+  ],
+  "$defs": {
+    "fingerprints": {
+      "type": "object",
+      "required": [
+        "protocol_hash",
+        "schema_versions",
+        "prompt_hashes",
+        "adapter_versions",
+        "input_checksums"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "protocol_hash": { "type": "string", "minLength": 1 },
+        "schema_versions": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "prompt_hashes": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "adapter_versions": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "container_digests": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "input_checksums": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "stage_outcome": {
+      "type": "object",
+      "required": ["stage", "adapter", "attempts", "final_exit_code", "usage"],
+      "additionalProperties": false,
+      "properties": {
+        "stage": {
+          "type": "string",
+          "enum": ["reasoner-1", "reasoner-2", "reasoner-3"]
+        },
+        "adapter": { "type": "string", "minLength": 1 },
+        "adapter_version": { "type": "string" },
+        "attempts": { "type": "integer", "minimum": 1 },
+        "final_exit_code": { "type": "integer" },
+        "started_at": { "type": "string", "format": "date-time" },
+        "finished_at": { "type": "string", "format": "date-time" },
+        "usage": { "$ref": "#/$defs/usage" },
+        "output_path": { "type": "string" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "tool_calls": { "type": "integer", "minimum": 0 },
+        "cost_usd": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

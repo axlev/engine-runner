@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engine-runner.internal/schemas/agent-request.schema.json",
+  "title": "Agent run request",
+  "description": "The exact, frozen request handed to an AgentAdapter for one stage execution. The orchestrator writes this verbatim to stages/<stage>/request.json for provenance before invoking the adapter.",
+  "type": "object",
+  "required": [
+    "run_id",
+    "case_id",
+    "stage",
+    "workspace_path",
+    "prompt_path",
+    "output_schema",
+    "model",
+    "budget"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "case_id": { "type": "string", "minLength": 1 },
+    "stage": {
+      "type": "string",
+      "enum": ["reasoner-1", "reasoner-2", "reasoner-3"]
+    },
+    "workspace_path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Path inside the isolated execution environment, never a host path outside the stage's own mounts."
+    },
+    "prompt_path": { "type": "string", "minLength": 1 },
+    "output_schema": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier or path of the schema the adapter's structured output must satisfy, e.g. review-a.schema.json."
+    },
+    "model": { "type": "string", "minLength": 1 },
+    "reasoning_level": { "type": "string" },
+    "budget": { "$ref": "#/$defs/budget" },
+    "environment": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Scoped, non-secret environment values passed into the isolated execution. Credentials are injected separately and never appear here."
+    }
+  },
+  "$defs": {
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_input_tokens": { "type": "integer", "minimum": 0 },
+        "max_output_tokens": { "type": "integer", "minimum": 0 },
+        "max_wall_clock_seconds": { "type": "integer", "minimum": 0 },
+        "max_tool_calls": { "type": "integer", "minimum": 0 },
+        "max_cost_usd": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

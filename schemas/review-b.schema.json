@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engine-runner.internal/schemas/review-b.schema.json",
+  "title": "Review B - evidence assessments",
+  "description": "Output of reasoner-2, the evidence reviewer. Reasoner 2 receives the prospective bundle and, only when the frozen protocol enables the A-to-B handoff, review-a.json. It builds causal chains from repository evidence and confirms, narrows, rejects, or marks each discovery finding inconclusive.",
+  "type": "object",
+  "required": ["schema_version", "run_id", "case_id", "stage", "generated_at", "assessments"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "review-b/v1" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "case_id": { "type": "string", "minLength": 1 },
+    "stage": { "const": "reasoner-2" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "review_a_ref": {
+      "type": "string",
+      "description": "Checksum or identifier of the review-a.json this assessment was built from. Absent when the protocol did not enable the A-to-B handoff."
+    },
+    "assessments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/assessment" }
+    }
+  },
+  "$defs": {
+    "assessment": {
+      "type": "object",
+      "required": ["finding_id", "disposition", "causal_chain"],
+      "additionalProperties": false,
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The review-a.json finding id this assessment resolves."
+        },
+        "disposition": {
+          "type": "string",
+          "enum": ["CONFIRMED", "NARROWED", "REJECTED", "INCONCLUSIVE"]
+        },
+        "narrowed_description": {
+          "type": "string",
+          "description": "Required when disposition is NARROWED: the corrected, smaller claim."
+        },
+        "rejection_reason": {
+          "type": "string",
+          "description": "Required when disposition is REJECTED."
+        },
+        "causal_chain": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence_ref" },
+          "description": "Ordered repository evidence establishing the causal path from cause to effect."
+        },
+        "proposed_test": {
+          "type": "object",
+          "description": "The smallest falsifier, validator, or test that would confirm or refute the finding.",
+          "required": ["description"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["unit_test", "repro_script", "manual_check", "other"]
+            },
+            "description": { "type": "string", "minLength": 1 }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "disposition": { "const": "NARROWED" } } },
+          "then": { "required": ["narrowed_description"] }
+        },
+        {
+          "if": { "properties": { "disposition": { "const": "REJECTED" } } },
+          "then": { "required": ["rejection_reason"] }
+        }
+      ]
+    },
+    "evidence_ref": {
+      "type": "object",
+      "required": ["file"],
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "start_line": { "type": "integer", "minimum": 1 },
+        "end_line": { "type": "integer", "minimum": 1 },
+        "excerpt": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

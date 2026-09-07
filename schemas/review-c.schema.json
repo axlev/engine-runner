@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engine-runner.internal/schemas/review-c.schema.json",
+  "title": "Review C - adversarial verification",
+  "description": "Output of reasoner-3, the adversarial verifier. Reasoner 3 receives exactly the inputs visible to reasoner 2 plus review-b.json and tries to falsify every B assessment. It may report new findings only when they were discovered near a mechanism it entered while validating a B assessment - this is not a second discovery pass.",
+  "type": "object",
+  "required": ["schema_version", "run_id", "case_id", "stage", "generated_at", "verdicts"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "review-c/v1" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "case_id": { "type": "string", "minLength": 1 },
+    "stage": { "const": "reasoner-3" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "review_b_ref": {
+      "type": "string",
+      "description": "Checksum or identifier of the review-b.json under verification."
+    },
+    "verdicts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/verdict" }
+    },
+    "new_findings": {
+      "type": "array",
+      "description": "Findings discovered only while validating a B assessment, tied to the mechanism that surfaced them.",
+      "items": { "$ref": "#/$defs/new_finding" }
+    }
+  },
+  "$defs": {
+    "verdict": {
+      "type": "object",
+      "required": ["finding_id", "disposition", "rationale"],
+      "additionalProperties": false,
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The review-b.json assessment's finding_id being adjudicated."
+        },
+        "disposition": {
+          "type": "string",
+          "enum": ["CONFIRMED", "NARROWED", "REJECTED", "INCONCLUSIVE"]
+        },
+        "narrowed_description": {
+          "type": "string",
+          "description": "Required when disposition is NARROWED."
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "description": "How the verifier attempted to falsify the finding and what it found."
+        },
+        "falsification_attempt": { "$ref": "#/$defs/evidence_ref" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "disposition": { "const": "NARROWED" } } },
+          "then": { "required": ["narrowed_description"] }
+        }
+      ]
+    },
+    "new_finding": {
+      "type": "object",
+      "required": ["id", "title", "description", "discovered_via", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "discovered_via": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The review-b.json finding_id or mechanism that led to this discovery."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"]
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence_ref" }
+        }
+      }
+    },
+    "evidence_ref": {
+      "type": "object",
+      "required": ["file"],
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "start_line": { "type": "integer", "minimum": 1 },
+        "end_line": { "type": "integer", "minimum": 1 },
+        "excerpt": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}
