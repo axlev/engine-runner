@@ -1,0 +1,1 @@
+{ "schema_version": "review-a/v1", "case_id": "invalid-json", "findings": [ { "id": "f1", "title": "truncated mid-stream, no closing braces

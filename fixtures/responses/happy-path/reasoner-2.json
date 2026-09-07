@@ -1,0 +1,40 @@
+{
+  "schema_version": "review-b/v1",
+  "run_id": "fixture-run",
+  "case_id": "happy-path",
+  "stage": "reasoner-2",
+  "generated_at": "2026-01-01T00:05:00Z",
+  "review_a_ref": "sha256:fixture-review-a",
+  "assessments": [
+    {
+      "finding_id": "f1",
+      "disposition": "CONFIRMED",
+      "causal_chain": [
+        {
+          "file": "internal/paging/paginate.go",
+          "start_line": 42,
+          "end_line": 47,
+          "excerpt": "for i := 0; i <= pageSize; i++ {",
+          "note": "Confirmed against the caller in cmd/bench/list.go, which allocates exactly pageSize slots."
+        }
+      ],
+      "proposed_test": {
+        "kind": "unit_test",
+        "description": "Add a table test asserting Paginate returns exactly pageSize items for pageSize=1..5."
+      }
+    },
+    {
+      "finding_id": "f2",
+      "disposition": "REJECTED",
+      "rejection_reason": "LoadConfig always calls defaultRetry() before returning; a nil Retry field is unreachable on this path.",
+      "causal_chain": [
+        {
+          "file": "internal/config/config.go",
+          "start_line": 20,
+          "end_line": 24,
+          "excerpt": "cfg.Retry = defaultRetry()"
+        }
+      ]
+    }
+  ]
+}

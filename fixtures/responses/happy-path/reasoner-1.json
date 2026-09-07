@@ -1,0 +1,44 @@
+{
+  "schema_version": "review-a/v1",
+  "run_id": "fixture-run",
+  "case_id": "happy-path",
+  "stage": "reasoner-1",
+  "generated_at": "2026-01-01T00:00:00Z",
+  "summary": "Broad pass over the diff; one likely off-by-one and one speculative nil-dereference.",
+  "findings": [
+    {
+      "id": "f1",
+      "title": "Off-by-one in page boundary check",
+      "description": "The loop condition uses <= against the page size, which includes one element past the intended boundary.",
+      "category": "correctness",
+      "severity": "medium",
+      "confidence": 0.6,
+      "evidence": [
+        {
+          "file": "internal/paging/paginate.go",
+          "start_line": 42,
+          "end_line": 47,
+          "excerpt": "for i := 0; i <= pageSize; i++ {"
+        }
+      ],
+      "uncertainty": "Have not confirmed pageSize's exact semantics against callers."
+    },
+    {
+      "id": "f2",
+      "title": "Possible nil dereference on empty config",
+      "description": "cfg.Retry is dereferenced without a nil check after LoadConfig, which can plausibly return a zero-value Config.",
+      "category": "correctness",
+      "severity": "high",
+      "confidence": 0.4,
+      "evidence": [
+        {
+          "file": "internal/runner/runner.go",
+          "start_line": 88,
+          "end_line": 90,
+          "excerpt": "timeout := cfg.Retry.MaxWait"
+        }
+      ],
+      "uncertainty": "Have not traced whether LoadConfig can actually return a nil Retry field."
+    }
+  ]
+}

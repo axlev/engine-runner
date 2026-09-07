@@ -1,0 +1,10 @@
+{
+  "name": "schema-violation",
+  "description": "Reasoner 1 returns syntactically valid JSON that violates review-a.schema.json: missing required fields and a wrong stage value.",
+  "stages": {
+    "reasoner-1": {
+      "usage": { "input_tokens": 500, "output_tokens": 60, "tool_calls": 0, "cost_usd": 0.003 },
+      "default": { "kind": "success", "response_path": "responses/schema-violation/reasoner-1.json" }
+    }
+  }
+}

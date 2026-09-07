@@ -1,0 +1,14 @@
+{
+  "name": "timeout",
+  "description": "Reasoner 1 exceeds its wall-clock budget. Drive this in a test with a context deadline shorter than delay_ms to assert the adapter returns on ctx.Done() rather than blocking for the full delay.",
+  "stages": {
+    "reasoner-1": {
+      "usage": { "input_tokens": 300, "output_tokens": 0, "tool_calls": 0, "cost_usd": 0.001 },
+      "default": {
+        "kind": "hang",
+        "delay_ms": 30000,
+        "then": { "kind": "success", "response_path": "responses/happy-path/reasoner-1.json" }
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": "review-c/v1",
+  "run_id": "fixture-run",
+  "case_id": "happy-path",
+  "stage": "reasoner-3",
+  "generated_at": "2026-01-01T00:09:00Z",
+  "review_b_ref": "sha256:fixture-review-b",
+  "verdicts": [
+    {
+      "finding_id": "f1",
+      "disposition": "CONFIRMED",
+      "rationale": "Constructed a pageSize=1 call and traced the loop; it writes pageSize+1 items, confirming the defect."
+    },
+    {
+      "finding_id": "f2",
+      "disposition": "REJECTED",
+      "rationale": "Verified defaultRetry() is called unconditionally inside LoadConfig before any return path; no nil Retry is reachable."
+    }
+  ],
+  "new_findings": []
+}

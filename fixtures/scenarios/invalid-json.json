@@ -1,0 +1,10 @@
+{
+  "name": "invalid-json",
+  "description": "Reasoner 1 returns content that is not parseable JSON at all, simulating a vendor response that failed to produce structured output. FixtureAdapter still succeeds mechanically (exit 0) - detecting this is the engine's job, not the adapter's.",
+  "stages": {
+    "reasoner-1": {
+      "usage": { "input_tokens": 500, "output_tokens": 40, "tool_calls": 0, "cost_usd": 0.002 },
+      "default": { "kind": "success", "response_path": "responses/invalid-json/reasoner-1.txt" }
+    }
+  }
+}

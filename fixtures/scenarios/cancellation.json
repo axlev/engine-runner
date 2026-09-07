@@ -1,0 +1,14 @@
+{
+  "name": "cancellation",
+  "description": "Reasoner 2 is mid-execution when the caller explicitly cancels the context, e.g. because a sibling stage or the whole run was aborted.",
+  "stages": {
+    "reasoner-2": {
+      "usage": { "input_tokens": 300, "output_tokens": 0, "tool_calls": 0, "cost_usd": 0.001 },
+      "default": {
+        "kind": "hang",
+        "delay_ms": 30000,
+        "then": { "kind": "success", "response_path": "responses/happy-path/reasoner-2.json" }
+      }
+    }
+  }
+}

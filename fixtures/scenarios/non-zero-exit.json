@@ -1,0 +1,10 @@
+{
+  "name": "non-zero-exit",
+  "description": "Reasoner 3's process exits with a non-zero status before producing any structured output.",
+  "stages": {
+    "reasoner-3": {
+      "usage": { "input_tokens": 1200, "output_tokens": 0, "tool_calls": 1, "cost_usd": 0.006 },
+      "default": { "kind": "exit", "exit_code": 1 }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "retry-then-success",
+  "description": "Reasoner 1 fails on its first attempt and succeeds on retry, for exercising the runner's retry policy and verifying adapter idempotency across repeated attempts.",
+  "stages": {
+    "reasoner-1": {
+      "usage": { "input_tokens": 500, "output_tokens": 20, "tool_calls": 0, "cost_usd": 0.002 },
+      "default": { "kind": "success", "response_path": "responses/happy-path/reasoner-1.json" },
+      "attempts": {
+        "1": { "kind": "exit", "exit_code": 1 }
+      }
+    }
+  }
+}

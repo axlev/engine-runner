@@ -1,0 +1,10 @@
+{
+  "name": "partial-output",
+  "description": "Reasoner 2's process is interrupted mid-write, producing a truncated, incomplete JSON document.",
+  "stages": {
+    "reasoner-2": {
+      "usage": { "input_tokens": 4000, "output_tokens": 300, "tool_calls": 2, "cost_usd": 0.018 },
+      "default": { "kind": "success", "response_path": "responses/partial-output/reasoner-2.json" }
+    }
+  }
+}
