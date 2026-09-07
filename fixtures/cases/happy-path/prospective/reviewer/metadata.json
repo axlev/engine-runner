@@ -1,0 +1,7 @@
+{
+  "schema_version": "reviewer-metadata/v1",
+  "repository": "example/widget-service",
+  "title": "Add cursor loop bound and explicit retry timeout wiring",
+  "description": "Introduces a page-boundary loop change in Paginate and wires an explicit timeout read from RetryConfig in Execute.",
+  "cutoff_timestamp": "2026-01-01T00:00:00Z"
+}

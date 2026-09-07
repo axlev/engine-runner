@@ -1,0 +1,7 @@
+{
+  "schema_version": "engine-manifest/v1",
+  "case_id": "happy-path",
+  "base_commit": "0000000000000000000000000000000000000000",
+  "cutoff_commit": "deadbeef00000000000000000000000000000000",
+  "snapshot_format": "directory-snapshot/v1"
+}
