@@ -88,7 +88,7 @@ func TestOrchestratorHappyPathEndToEnd(t *testing.T) {
 	adapter := newFixtureAdapter(t)
 	work := t.TempDir()
 
-	o, err := New(repoRoot, protocol, adapter, work)
+	o, err := New(repoRoot, pilotV1Path, protocol, adapter, work)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -116,6 +116,22 @@ func TestOrchestratorHappyPathEndToEnd(t *testing.T) {
 			t.Errorf("expected output file to exist at %s: %v", p, err)
 		}
 	}
+
+	fp := outcome.Fingerprints
+	if fp.ProtocolHash == "" {
+		t.Errorf("Fingerprints.ProtocolHash is empty")
+	}
+	for _, stage := range []string{"reasoner-1", "reasoner-2", "reasoner-3"} {
+		if fp.PromptHashes[stage] == "" {
+			t.Errorf("Fingerprints.PromptHashes[%q] is empty", stage)
+		}
+		if fp.AdapterVersions[stage] != "fixture/fixture/v1" {
+			t.Errorf("Fingerprints.AdapterVersions[%q] = %q, want \"fixture/fixture/v1\"", stage, fp.AdapterVersions[stage])
+		}
+	}
+	if len(fp.InputChecksums) != 6 {
+		t.Errorf("len(Fingerprints.InputChecksums) = %d, want 6 (matching the happy-path bundle's checksums.sha256)", len(fp.InputChecksums))
+	}
 }
 
 func TestOrchestratorRetryRecoversMidRun(t *testing.T) {
@@ -123,7 +139,7 @@ func TestOrchestratorRetryRecoversMidRun(t *testing.T) {
 	adapter := newFixtureAdapter(t)
 	work := t.TempDir()
 
-	o, err := New(repoRoot, protocol, adapter, work)
+	o, err := New(repoRoot, pilotV1Path, protocol, adapter, work)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -161,7 +177,7 @@ func TestOrchestratorFailsFastAndStopsAfterExhaustingRetries(t *testing.T) {
 	adapter := newFixtureAdapter(t)
 	work := t.TempDir()
 
-	o, err := New(repoRoot, protocol, adapter, work)
+	o, err := New(repoRoot, pilotV1Path, protocol, adapter, work)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -203,7 +219,7 @@ func TestOrchestratorReasoner2NeverSeesReviewAWhenHandoffDisabled(t *testing.T) 
 	adapter := newFixtureAdapter(t)
 	work := t.TempDir()
 
-	o, err := New(repoRoot, &disabled, adapter, work)
+	o, err := New(repoRoot, pilotV1Path, &disabled, adapter, work)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

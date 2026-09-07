@@ -1,0 +1,367 @@
+// Package results turns a completed orchestrator.RunOutcome into the sealed,
+// on-disk result tree described in docs/system-design.md section 11. It
+// does no orchestration of its own: everything it writes was already
+// decided by the orchestrator: which attempts happened, which succeeded,
+// and what the run's fingerprints are.
+package results
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/axlev/engine-runner/internal/adapters"
+	"github.com/axlev/engine-runner/internal/evaluation"
+	"github.com/axlev/engine-runner/internal/orchestrator"
+)
+
+// Writer writes sealed run directories under root (docs/system-design.md's
+// data/results/ in a real deployment).
+type Writer struct {
+	root string
+}
+
+func NewWriter(root string) (*Writer, error) {
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return nil, fmt.Errorf("results: creating root %s: %w", root, err)
+	}
+	return &Writer{root: root}, nil
+}
+
+// WriteRun writes stages/<stage>/{request,telemetry,review-*}.json for every
+// stage that was attempted, evaluation/{scores,findings}.json when the run
+// completed, run.json, events.jsonl, and finally checksums.sha256 over the
+// whole tree - in that order, since the checksum manifest must be written
+// last to cover everything else.
+func (w *Writer) WriteRun(outcome orchestrator.RunOutcome) (string, error) {
+	runDir := filepath.Join(w.root, outcome.RunID)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		return "", fmt.Errorf("results: creating run dir %s: %w", runDir, err)
+	}
+
+	stagesDir := filepath.Join(runDir, "stages")
+	stageDocs, err := w.writeStages(stagesDir, runDir, outcome.Attempts)
+	if err != nil {
+		return "", err
+	}
+
+	if outcome.Status == "completed" {
+		if err := writeEvaluation(runDir, stagesDir, outcome.RunID, outcome.CaseID); err != nil {
+			return "", err
+		}
+	}
+
+	if err := writeRunManifest(runDir, outcome, stageDocs); err != nil {
+		return "", err
+	}
+	if err := writeEvents(runDir, outcome); err != nil {
+		return "", err
+	}
+	if err := writeChecksums(runDir); err != nil {
+		return "", err
+	}
+
+	return runDir, nil
+}
+
+type telemetryAttempt struct {
+	Attempt int                 `json:"attempt"`
+	Request adapters.RunRequest `json:"request"`
+	Result  adapters.RunResult  `json:"result"`
+	Error   string              `json:"error,omitempty"`
+}
+
+type telemetryDoc struct {
+	Stage    string             `json:"stage"`
+	Attempts []telemetryAttempt `json:"attempts"`
+}
+
+type stageOutcomeDoc struct {
+	Stage          string         `json:"stage"`
+	Adapter        string         `json:"adapter"`
+	AdapterVersion string         `json:"adapter_version,omitempty"`
+	Attempts       int            `json:"attempts"`
+	FinalExitCode  int            `json:"final_exit_code"`
+	StartedAt      string         `json:"started_at,omitempty"`
+	FinishedAt     string         `json:"finished_at,omitempty"`
+	Usage          adapters.Usage `json:"usage"`
+	OutputPath     string         `json:"output_path,omitempty"`
+}
+
+// writeStages writes stages/<stage>/{telemetry,request,review-*}.json for
+// each stage that has at least one recorded attempt, and returns the
+// run.json summary row for each.
+func (w *Writer) writeStages(stagesDir, runDir string, attempts []orchestrator.StageAttemptRecord) ([]stageOutcomeDoc, error) {
+	var order []adapters.Stage
+	byStage := map[adapters.Stage][]orchestrator.StageAttemptRecord{}
+	for _, rec := range attempts {
+		if _, seen := byStage[rec.Stage]; !seen {
+			order = append(order, rec.Stage)
+		}
+		byStage[rec.Stage] = append(byStage[rec.Stage], rec)
+	}
+
+	var docs []stageOutcomeDoc
+	for _, stage := range order {
+		recs := byStage[stage]
+		stageDir := filepath.Join(stagesDir, string(stage))
+		if err := os.MkdirAll(stageDir, 0o755); err != nil {
+			return nil, fmt.Errorf("results: creating %s: %w", stageDir, err)
+		}
+
+		telemetry := telemetryDoc{Stage: string(stage)}
+		for _, rec := range recs {
+			telemetry.Attempts = append(telemetry.Attempts, telemetryAttempt{
+				Attempt: rec.Attempt, Request: rec.Request, Result: rec.Result, Error: rec.Err,
+			})
+		}
+		if err := writeJSONFile(filepath.Join(stageDir, "telemetry.json"), telemetry); err != nil {
+			return nil, err
+		}
+
+		last := recs[len(recs)-1]
+		doc := stageOutcomeDoc{
+			Stage:          string(stage),
+			Adapter:        last.Result.Adapter,
+			AdapterVersion: last.Result.Version,
+			Attempts:       len(recs),
+			FinalExitCode:  last.Result.ExitCode,
+			StartedAt:      formatTime(last.Result.StartedAt),
+			FinishedAt:     formatTime(last.Result.FinishedAt),
+			Usage:          last.Result.Usage,
+		}
+
+		if winning := lastSuccessful(recs); winning != nil {
+			if err := writeJSONFile(filepath.Join(stageDir, "request.json"), winning.Request); err != nil {
+				return nil, err
+			}
+			dst := filepath.Join(stageDir, reviewFileName(stage))
+			if err := copyFile(winning.Result.OutputPath, dst); err != nil {
+				return nil, err
+			}
+			rel, err := filepath.Rel(runDir, dst)
+			if err != nil {
+				return nil, fmt.Errorf("results: %w", err)
+			}
+			doc.OutputPath = rel
+			doc.Usage = winning.Result.Usage
+			doc.FinalExitCode = winning.Result.ExitCode
+			doc.StartedAt = formatTime(winning.Result.StartedAt)
+			doc.FinishedAt = formatTime(winning.Result.FinishedAt)
+		}
+
+		docs = append(docs, doc)
+	}
+	return docs, nil
+}
+
+func lastSuccessful(recs []orchestrator.StageAttemptRecord) *orchestrator.StageAttemptRecord {
+	for i := len(recs) - 1; i >= 0; i-- {
+		if recs[i].Err == "" {
+			return &recs[i]
+		}
+	}
+	return nil
+}
+
+func reviewFileName(stage adapters.Stage) string {
+	switch stage {
+	case adapters.StageReasoner1:
+		return "review-a.json"
+	case adapters.StageReasoner2:
+		return "review-b.json"
+	case adapters.StageReasoner3:
+		return "review-c.json"
+	default:
+		return string(stage) + ".json"
+	}
+}
+
+func writeEvaluation(runDir, stagesDir, runID, caseID string) error {
+	scores, findings, err := evaluation.Evaluate(
+		runID, caseID,
+		filepath.Join(stagesDir, "reasoner-1", "review-a.json"),
+		filepath.Join(stagesDir, "reasoner-2", "review-b.json"),
+		filepath.Join(stagesDir, "reasoner-3", "review-c.json"),
+	)
+	if err != nil {
+		return fmt.Errorf("results: evaluating: %w", err)
+	}
+	evalDir := filepath.Join(runDir, "evaluation")
+	if err := os.MkdirAll(evalDir, 0o755); err != nil {
+		return fmt.Errorf("results: creating %s: %w", evalDir, err)
+	}
+	if err := writeJSONFile(filepath.Join(evalDir, "scores.json"), scores); err != nil {
+		return err
+	}
+	return writeJSONFile(filepath.Join(evalDir, "findings.json"), findings)
+}
+
+type runResultDoc struct {
+	SchemaVersion      string                    `json:"schema_version"`
+	RunID              string                    `json:"run_id"`
+	CaseID             string                    `json:"case_id"`
+	ProtocolVersion    string                    `json:"protocol_version"`
+	CreatedAt          string                    `json:"created_at"`
+	SealedAt           string                    `json:"sealed_at"`
+	Status             string                    `json:"status"`
+	InvalidationReason string                    `json:"invalidation_reason,omitempty"`
+	Fingerprints       orchestrator.Fingerprints `json:"fingerprints"`
+	Stages             []stageOutcomeDoc         `json:"stages"`
+}
+
+func writeRunManifest(runDir string, outcome orchestrator.RunOutcome, stageDocs []stageOutcomeDoc) error {
+	status := outcome.Status
+	if status == "" {
+		status = "failed"
+	}
+	doc := runResultDoc{
+		SchemaVersion:   "run-result/v1",
+		RunID:           outcome.RunID,
+		CaseID:          outcome.CaseID,
+		ProtocolVersion: outcome.ProtocolVersion,
+		CreatedAt:       formatTime(outcome.CreatedAt),
+		SealedAt:        formatTime(time.Now().UTC()),
+		Status:          status,
+		Fingerprints:    outcome.Fingerprints,
+		Stages:          stageDocs,
+	}
+	if status != "completed" {
+		doc.InvalidationReason = outcome.FailureReason
+		if doc.InvalidationReason == "" {
+			doc.InvalidationReason = "unknown failure"
+		}
+	}
+	return writeJSONFile(filepath.Join(runDir, "run.json"), doc)
+}
+
+type event struct {
+	Time    string `json:"time"`
+	Type    string `json:"type"`
+	Stage   string `json:"stage,omitempty"`
+	Attempt int    `json:"attempt,omitempty"`
+	Detail  string `json:"detail,omitempty"`
+}
+
+// writeEvents reconstructs a chronological event log from the outcome's
+// attempt records. This is a simplification for the fixture-only MVP: a
+// live event stream emitted during orchestrator.Run itself is a reasonable
+// future enhancement, not required for Milestone 1's exit criterion.
+func writeEvents(runDir string, outcome orchestrator.RunOutcome) error {
+	path := filepath.Join(runDir, "events.jsonl")
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("results: creating %s: %w", path, err)
+	}
+	defer f.Close()
+
+	enc := json.NewEncoder(f)
+	for _, rec := range outcome.Attempts {
+		ev := event{Time: formatTime(rec.Result.FinishedAt), Stage: string(rec.Stage), Attempt: rec.Attempt}
+		if rec.Err == "" {
+			ev.Type = "stage_attempt_succeeded"
+		} else {
+			ev.Type = "stage_attempt_failed"
+			ev.Detail = rec.Err
+		}
+		if err := enc.Encode(ev); err != nil {
+			return fmt.Errorf("results: writing event: %w", err)
+		}
+	}
+
+	final := event{Time: formatTime(time.Now().UTC())}
+	if outcome.Status == "completed" {
+		final.Type = "run_completed"
+	} else {
+		final.Type = "run_failed"
+		final.Detail = outcome.FailureReason
+	}
+	if err := enc.Encode(final); err != nil {
+		return fmt.Errorf("results: writing final event: %w", err)
+	}
+	return nil
+}
+
+// writeChecksums hashes every file already written under runDir and writes
+// checksums.sha256 last, so the manifest covers the complete, final tree -
+// including run.json and events.jsonl, which are themselves written before
+// this call.
+func writeChecksums(runDir string) error {
+	var lines []string
+	err := filepath.WalkDir(runDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(runDir, path)
+		if err != nil {
+			return err
+		}
+		if rel == "checksums.sha256" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(data)
+		lines = append(lines, fmt.Sprintf("%s  %s", hex.EncodeToString(sum[:]), filepath.ToSlash(rel)))
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("results: computing checksums under %s: %w", runDir, err)
+	}
+	sort.Strings(lines)
+	content := strings.Join(lines, "\n")
+	if content != "" {
+		content += "\n"
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "checksums.sha256"), []byte(content), 0o644); err != nil {
+		return fmt.Errorf("results: writing checksums.sha256: %w", err)
+	}
+	return nil
+}
+
+func writeJSONFile(path string, v interface{}) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("results: marshaling %s: %w", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("results: creating %s: %w", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("results: writing %s: %w", path, err)
+	}
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("results: reading %s: %w", src, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("results: creating %s: %w", filepath.Dir(dst), err)
+	}
+	if err := os.WriteFile(dst, data, 0o644); err != nil {
+		return fmt.Errorf("results: writing %s: %w", dst, err)
+	}
+	return nil
+}
+
+func formatTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}

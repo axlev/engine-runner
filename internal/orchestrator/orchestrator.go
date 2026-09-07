@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/axlev/engine-runner/internal/adapters"
 	"github.com/axlev/engine-runner/internal/contextbuilder"
@@ -46,12 +47,14 @@ type RunOutcome struct {
 	RunID           string
 	CaseID          string
 	ProtocolVersion string
+	CreatedAt       time.Time
 	Status          string // "completed" or "failed"
 	FailureReason   string
 	Attempts        []StageAttemptRecord
 	ReviewAPath     string
 	ReviewBPath     string
 	ReviewCPath     string
+	Fingerprints    Fingerprints
 }
 
 var stageOrder = []adapters.Stage{adapters.StageReasoner1, adapters.StageReasoner2, adapters.StageReasoner3}
@@ -63,6 +66,12 @@ type Orchestrator struct {
 	// "schemas/review-a.schema.json").
 	RepoRoot string
 
+	// ProtocolPath is the on-disk YAML file Protocol was loaded from. It
+	// is hashed into every run's Fingerprints so a result is traceable
+	// back to the exact protocol bytes used, not just its declared
+	// version string.
+	ProtocolPath string
+
 	Protocol  *Protocol
 	Adapter   adapters.AgentAdapter
 	Builder   *contextbuilder.Builder
@@ -72,18 +81,19 @@ type Orchestrator struct {
 
 // New wires an Orchestrator. workspaceRoot is where the Runner creates fresh
 // per-attempt workspace directories.
-func New(repoRoot string, protocol *Protocol, adapter adapters.AgentAdapter, workspaceRoot string) (*Orchestrator, error) {
+func New(repoRoot, protocolPath string, protocol *Protocol, adapter adapters.AgentAdapter, workspaceRoot string) (*Orchestrator, error) {
 	r, err := runner.New(workspaceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("orchestrator: %w", err)
 	}
 	return &Orchestrator{
-		RepoRoot:  repoRoot,
-		Protocol:  protocol,
-		Adapter:   adapter,
-		Builder:   contextbuilder.New(),
-		Runner:    r,
-		Validator: NewSchemaValidator(repoRoot),
+		RepoRoot:     repoRoot,
+		ProtocolPath: protocolPath,
+		Protocol:     protocol,
+		Adapter:      adapter,
+		Builder:      contextbuilder.New(),
+		Runner:       r,
+		Validator:    NewSchemaValidator(repoRoot),
 	}, nil
 }
 
@@ -91,7 +101,18 @@ func New(repoRoot string, protocol *Protocol, adapter adapters.AgentAdapter, wor
 // unrecoverable stage failure. bundleRoot is the case's prospective/
 // directory.
 func (o *Orchestrator) Run(ctx context.Context, runID, caseID, bundleRoot string) (RunOutcome, error) {
-	outcome := RunOutcome{RunID: runID, CaseID: caseID, ProtocolVersion: o.Protocol.Version}
+	outcome := RunOutcome{
+		RunID:           runID,
+		CaseID:          caseID,
+		ProtocolVersion: o.Protocol.Version,
+		CreatedAt:       time.Now().UTC(),
+	}
+
+	fp, err := computeStaticFingerprints(o.ProtocolPath, o.RepoRoot, bundleRoot, o.Protocol)
+	if err != nil {
+		return outcome, fmt.Errorf("orchestrator: computing fingerprints: %w", err)
+	}
+	outcome.Fingerprints = fp
 
 	var reviewAPath, reviewBPath string
 	policy := contextbuilder.HandoffPolicy{EnableAToB: o.Protocol.Handoffs.EnableAToB}
@@ -115,6 +136,10 @@ func (o *Orchestrator) Run(ctx context.Context, runID, caseID, bundleRoot string
 
 		outputPath, records, err := o.runStageWithRetries(ctx, runID, caseID, stage, stageProto, promptPath, bundleRoot, policy, inputs)
 		outcome.Attempts = append(outcome.Attempts, records...)
+		if len(records) > 0 {
+			last := records[len(records)-1]
+			outcome.Fingerprints.AdapterVersions[string(stage)] = last.Result.Adapter + "/" + last.Result.Version
+		}
 		if err != nil {
 			outcome.Status = "failed"
 			outcome.FailureReason = err.Error()

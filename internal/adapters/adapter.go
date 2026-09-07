@@ -39,20 +39,20 @@ const AttemptEnvKey = "ENGINE_ATTEMPT"
 // reporting Usage so the runner can enforce the rest (e.g. wall-clock
 // timeout) from the outside.
 type Budget struct {
-	MaxInputTokens      int
-	MaxOutputTokens     int
-	MaxWallClockSeconds int
-	MaxToolCalls        int
-	MaxCostUSD          float64
+	MaxInputTokens      int     `json:"max_input_tokens,omitempty"`
+	MaxOutputTokens     int     `json:"max_output_tokens,omitempty"`
+	MaxWallClockSeconds int     `json:"max_wall_clock_seconds,omitempty"`
+	MaxToolCalls        int     `json:"max_tool_calls,omitempty"`
+	MaxCostUSD          float64 `json:"max_cost_usd,omitempty"`
 }
 
 // Usage reports what a stage execution actually consumed, normalized across
 // vendors so cost and value can be compared stage-to-stage and run-to-run.
 type Usage struct {
-	InputTokens  int
-	OutputTokens int
-	ToolCalls    int
-	CostUSD      float64
+	InputTokens  int     `json:"input_tokens,omitempty"`
+	OutputTokens int     `json:"output_tokens,omitempty"`
+	ToolCalls    int     `json:"tool_calls,omitempty"`
+	CostUSD      float64 `json:"cost_usd,omitempty"`
 }
 
 // RunRequest is the exact, frozen input to one stage execution. It is
@@ -60,32 +60,32 @@ type Usage struct {
 // stages/<stage>/request.json before the adapter runs, so every invocation
 // is reconstructable after the fact.
 type RunRequest struct {
-	RunID  string
-	CaseID string
-	Stage  Stage
+	RunID  string `json:"run_id"`
+	CaseID string `json:"case_id"`
+	Stage  Stage  `json:"stage"`
 
 	// WorkspacePath is a path inside the isolated execution environment.
 	// It must never resolve outside that stage's own read-only and
 	// writable mounts.
-	WorkspacePath string
+	WorkspacePath string `json:"workspace_path"`
 
 	// PromptPath points to the frozen, versioned prompt for this stage
 	// and protocol version. Adapters must not alter it.
-	PromptPath string
+	PromptPath string `json:"prompt_path"`
 
 	// OutputSchema identifies the schema (e.g. "review-a.schema.json")
 	// the adapter's structured output at RunResult.OutputPath must
 	// satisfy. Validation is performed by the caller, not the adapter.
-	OutputSchema string
+	OutputSchema string `json:"output_schema"`
 
-	Model          string
-	ReasoningLevel string
-	Budget         Budget
+	Model          string `json:"model"`
+	ReasoningLevel string `json:"reasoning_level,omitempty"`
+	Budget         Budget `json:"budget"`
 
 	// Environment carries scoped, non-secret values into the isolated
 	// execution. Credentials are injected by the runner as scoped
 	// secrets and must never appear here or be echoed into RunResult.
-	Environment map[string]string
+	Environment map[string]string `json:"environment,omitempty"`
 }
 
 // RunResult reports the outcome of one stage execution. Attempt distinguishes
@@ -93,14 +93,14 @@ type RunRequest struct {
 // adapter must return one RunResult per attempt rather than retrying
 // internally.
 type RunResult struct {
-	OutputPath string
-	ExitCode   int
-	StartedAt  time.Time
-	FinishedAt time.Time
-	Usage      Usage
-	Adapter    string
-	Version    string
-	Attempt    int
+	OutputPath string    `json:"output_path,omitempty"`
+	ExitCode   int       `json:"exit_code"`
+	StartedAt  time.Time `json:"started_at"`
+	FinishedAt time.Time `json:"finished_at"`
+	Usage      Usage     `json:"usage"`
+	Adapter    string    `json:"adapter"`
+	Version    string    `json:"version"`
+	Attempt    int       `json:"attempt"`
 }
 
 // AgentAdapter provides vendor polymorphism without creating a generic

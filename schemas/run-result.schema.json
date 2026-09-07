@@ -29,7 +29,7 @@
     },
     "invalidation_reason": {
       "type": "string",
-      "description": "Required when status is invalidated, e.g. a boundary-validation failure or a contamination report during a reasoning stage."
+      "description": "Required when status is failed or invalidated: for invalidated, e.g. a boundary-validation failure or a contamination report during a reasoning stage; for failed, e.g. a stage exhausting its retry budget."
     },
     "fingerprints": { "$ref": "#/$defs/fingerprints" },
     "stages": {
@@ -39,7 +39,7 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "status": { "const": "invalidated" } } },
+      "if": { "properties": { "status": { "enum": ["failed", "invalidated"] } } },
       "then": { "required": ["invalidation_reason"] }
     }
   ],
