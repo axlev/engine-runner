@@ -79,28 +79,64 @@ type Orchestrator struct {
 	// version string.
 	ProtocolPath string
 
-	Protocol  *Protocol
-	Adapter   adapters.AgentAdapter
+	Protocol *Protocol
+
+	// AgentsDir is the directory AgentSet was loaded from. Its files are
+	// hashed into every run's fingerprints, so a result records the vendor
+	// binding that produced it as precisely as it records the protocol.
+	AgentsDir string
+	AgentSet  AgentSet
+
+	// Adapters is keyed by adapter name, not by stage: an agent set may
+	// bind different stages to different vendors, and each distinct vendor
+	// needs exactly one constructed adapter.
+	Adapters map[string]adapters.AgentAdapter
+
 	Builder   *contextbuilder.Builder
 	Runner    *runner.Runner
 	Validator *SchemaValidator
 }
 
+// Options are the inputs to New. It is a struct rather than a parameter
+// list because a run is defined by two independent configurations - the
+// protocol (the experiment) and the agent set (the vendor binding) - and
+// positional arguments made that easy to transpose.
+type Options struct {
+	RepoRoot      string
+	ProtocolPath  string
+	Protocol      *Protocol
+	AgentsDir     string
+	AgentSet      AgentSet
+	Adapters      map[string]adapters.AgentAdapter
+	WorkspaceRoot string
+}
+
 // New wires an Orchestrator. workspaceRoot is where the Runner creates fresh
 // per-attempt workspace directories.
-func New(repoRoot, protocolPath string, protocol *Protocol, adapter adapters.AgentAdapter, workspaceRoot string) (*Orchestrator, error) {
-	r, err := runner.New(workspaceRoot)
+func New(opts Options) (*Orchestrator, error) {
+	r, err := runner.New(opts.WorkspaceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("orchestrator: %w", err)
 	}
+	// Fail here rather than mid-run: a stage whose adapter was never
+	// constructed would otherwise blow up after earlier stages had already
+	// spent money.
+	for _, stage := range stageOrder {
+		name := opts.AgentSet[stage].Adapter
+		if _, ok := opts.Adapters[name]; !ok {
+			return nil, fmt.Errorf("orchestrator: stage %s needs adapter %q, which was not supplied", stage, name)
+		}
+	}
 	return &Orchestrator{
-		RepoRoot:     repoRoot,
-		ProtocolPath: protocolPath,
-		Protocol:     protocol,
-		Adapter:      adapter,
+		RepoRoot:     opts.RepoRoot,
+		ProtocolPath: opts.ProtocolPath,
+		Protocol:     opts.Protocol,
+		AgentsDir:    opts.AgentsDir,
+		AgentSet:     opts.AgentSet,
+		Adapters:     opts.Adapters,
 		Builder:      contextbuilder.New(),
 		Runner:       r,
-		Validator:    NewSchemaValidator(repoRoot),
+		Validator:    NewSchemaValidator(opts.RepoRoot),
 	}, nil
 }
 
@@ -131,7 +167,7 @@ func (o *Orchestrator) Run(ctx context.Context, runID, caseID, bundleRoot string
 	// record still says which protocol, prompts and schemas were in play
 	// when it was rejected. Validation's diagnosis stays the reported
 	// error either way - it is the more actionable one.
-	fp, fpErr := computeStaticFingerprints(o.ProtocolPath, o.RepoRoot, bundleRoot, o.Protocol)
+	fp, fpErr := computeStaticFingerprints(o.ProtocolPath, o.AgentsDir, o.RepoRoot, bundleRoot, o.Protocol)
 	if fpErr == nil {
 		outcome.Fingerprints = fp
 	}
@@ -205,6 +241,11 @@ func (o *Orchestrator) runStageWithRetries(
 	policy contextbuilder.HandoffPolicy,
 	inputs contextbuilder.StageInputs,
 ) (string, []StageAttemptRecord, error) {
+	// The vendor binding for this stage. New() has already verified the
+	// named adapter was supplied, so this lookup cannot miss.
+	agentCfg := o.AgentSet[stage]
+	adapter := o.Adapters[agentCfg.Adapter]
+
 	var records []StageAttemptRecord
 	var lastErr error
 
@@ -226,18 +267,18 @@ func (o *Orchestrator) runStageWithRetries(
 			WorkspacePath:  stageCtx.WorkspacePath,
 			PromptPath:     stageCtx.PromptPath,
 			OutputSchema:   stageProto.OutputSchema,
-			Model:          stageProto.Model,
-			ReasoningLevel: stageProto.ReasoningLevel,
-			Budget:         stageProto.Budget.toAdapterBudget(),
+			Model:          agentCfg.Model,
+			ReasoningLevel: agentCfg.ReasoningLevel,
+			Budget:         agentCfg.Budget.toAdapterBudget(),
 			Environment: map[string]string{
 				adapters.AttemptEnvKey: strconv.Itoa(attempt),
 			},
 		}
 
-		result, runErr := o.Adapter.Run(ctx, req)
+		result, runErr := adapter.Run(ctx, req)
 		result.Attempt = attempt
 		if result.Adapter == "" {
-			result.Adapter = o.Adapter.Name()
+			result.Adapter = adapter.Name()
 		}
 
 		record := StageAttemptRecord{Stage: stage, Attempt: attempt, Request: req, Result: result}

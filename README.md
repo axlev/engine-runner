@@ -70,16 +70,33 @@ property the whole design exists to support.
 | `-run-id` | generated | Run identifier |
 | `-protocol` | `configs/protocols/pilot-v1.yaml` | Frozen protocol to run under |
 | `-results-root` | `build/results` | Where the sealed run tree is written |
+| `-agents` | `fixtures/agents` | Vendor binding directory; use `configs/agents` for a real run |
 | `-adapter-image` | — | Container image, for the `claude` / `codex` adapters |
 
-## Swapping providers
+## Two configurations: the experiment and the vendor binding
 
-Changing which vendor runs the stages is a configuration change only — edit
-`adapter` in the protocol YAML:
+A run is defined by two files that vary independently:
 
-```yaml
-adapter: fixture   # or: claude, codex
+- **`-protocol configs/protocols/pilot-v1.yaml`** — the *experiment*:
+  prompts, handoffs, output contracts, stopping rules. This is the frozen
+  cohort definition and names no vendor.
+- **`-agents <dir>`** — the *vendor binding*: which adapter and model runs
+  each stage, at what effort and under what budget.
+
+So the same frozen cohort can be smoke-tested and then run for real, and
+both produce the same `protocol_version` and the same `protocol_hash`:
+
+```bash
+# smoke test - no credentials, no network, no cost (the default)
+bench -agents fixtures/agents  -bundle ... -case-id ...
+
+# the real cohort
+bench -agents configs/agents   -bundle ... -case-id ...
 ```
+
+Both the protocol and every agent config are hashed into each run's
+`fingerprints`, so a result records which experiment *and* which vendor
+binding produced it.
 
 `fixture` needs nothing. `claude` and `codex` need a credential in the
 environment (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`;
@@ -98,7 +115,8 @@ internal/
   runner/               Fresh per-attempt workspaces + container isolation
   results/              Sealed, checksummed result tree
   evaluation/           Deterministic scoring
-configs/protocols/      Frozen protocol manifests
+configs/protocols/      Frozen protocol manifests (the experiment)
+configs/agents/         Per-stage vendor binding (adapter, model, budget)
 schemas/                JSON Schemas for every artifact
 fixtures/               Synthetic cases, prompts, and adapter scenarios
 ```

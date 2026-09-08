@@ -1,15 +1,25 @@
-# Pilot v1 protocol - Milestone 1 fixture-only vertical slice.
+# Pilot v1 - the fixed pilot cohort of docs/system-design.md section 15,
+# Milestone 4.
 #
-# This is the frozen configuration for one cohort: which adapter to invoke,
-# which handoffs are enabled, and each stage's prompt, model, budget, and
-# output schema. Per design principle 6, prompts and settings here are not
-# tuned per case; per principle 5, every field here is what makes a run
-# reproducible.
+# This file is the frozen definition of one EXPERIMENT: the prompts each
+# reasoner is given, which handoffs are enabled, the output contracts, and
+# the stopping rules. Per design principle 6, none of it is tuned per case.
+#
+# It deliberately names no vendor. Which adapter and model run each stage,
+# at what effort and under what budget, lives in an agent set under
+# configs/agents/ (section 4.2). That separation is what lets this exact
+# cohort be smoke-tested through the fixture adapter and then run for real
+# through a vendor, without either producing a different protocol_version:
+#
+#   # smoke test, no credentials or cost
+#   bench -protocol configs/protocols/pilot-v1.yaml -agents fixtures/agents ...
+#
+#   # the real cohort
+#   bench -protocol configs/protocols/pilot-v1.yaml -agents configs/agents ...
 #
 # All paths are relative to the repository root.
 
 protocol_version: pilot-v1
-adapter: fixture
 
 handoffs:
   # Section 6.4: "Pilot v1 enables this handoff."
@@ -21,37 +31,13 @@ retry_policy:
 
 stages:
   reasoner-1:
-    prompt: fixtures/prompts/placeholder.md
-    model: fixture-model
-    reasoning_level: standard
+    prompt: prompts/pilot-v1/reasoner-1.md
     output_schema: schemas/review-a.schema.json
-    budget:
-      max_input_tokens: 16000
-      max_output_tokens: 2000
-      max_wall_clock_seconds: 300
-      max_tool_calls: 20
-      max_cost_usd: 0.50
 
   reasoner-2:
-    prompt: fixtures/prompts/placeholder.md
-    model: fixture-model
-    reasoning_level: standard
+    prompt: prompts/pilot-v1/reasoner-2.md
     output_schema: schemas/review-b.schema.json
-    budget:
-      max_input_tokens: 20000
-      max_output_tokens: 2000
-      max_wall_clock_seconds: 300
-      max_tool_calls: 20
-      max_cost_usd: 0.50
 
   reasoner-3:
-    prompt: fixtures/prompts/placeholder.md
-    model: fixture-model
-    reasoning_level: standard
+    prompt: prompts/pilot-v1/reasoner-3.md
     output_schema: schemas/review-c.schema.json
-    budget:
-      max_input_tokens: 20000
-      max_output_tokens: 1500
-      max_wall_clock_seconds: 300
-      max_tool_calls: 20
-      max_cost_usd: 0.50

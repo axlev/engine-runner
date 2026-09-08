@@ -1,0 +1,16 @@
+# Vendor binding for reasoner-3 (adversarial verification).
+#
+# See reasoner-1.yaml for what belongs here and why. NOT YET RUNNABLE - no
+# adapter container image has been built.
+adapter: claude
+model: claude-opus-5
+reasoning_level: high
+
+budget:
+  # Falsification is targeted rather than exploratory: it enters specific
+  # mechanisms named by review-b rather than surveying the change.
+  max_input_tokens: 160000
+  max_output_tokens: 6000
+  max_wall_clock_seconds: 900
+  max_tool_calls: 60
+  max_cost_usd: 2.00

@@ -17,30 +17,68 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "const": "run-result/v1" },
-    "run_id": { "type": "string", "minLength": 1 },
-    "case_id": { "type": "string", "minLength": 1 },
-    "protocol_version": { "type": "string", "minLength": 1 },
-    "created_at": { "type": "string", "format": "date-time" },
-    "sealed_at": { "type": "string", "format": "date-time" },
+    "schema_version": {
+      "const": "run-result/v1"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "protocol_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sealed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
     "status": {
       "type": "string",
-      "enum": ["completed", "failed", "invalidated"]
+      "enum": [
+        "completed",
+        "failed",
+        "invalidated"
+      ]
     },
     "invalidation_reason": {
       "type": "string",
       "description": "Required when status is failed or invalidated: for invalidated, e.g. a boundary-validation failure or a contamination report during a reasoning stage; for failed, e.g. a stage exhausting its retry budget."
     },
-    "fingerprints": { "$ref": "#/$defs/fingerprints" },
+    "fingerprints": {
+      "$ref": "#/$defs/fingerprints"
+    },
     "stages": {
       "type": "array",
-      "items": { "$ref": "#/$defs/stage_outcome" }
+      "items": {
+        "$ref": "#/$defs/stage_outcome"
+      }
     }
   },
   "allOf": [
     {
-      "if": { "properties": { "status": { "enum": ["failed", "invalidated"] } } },
-      "then": { "required": ["invalidation_reason"] }
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "failed",
+              "invalidated"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "invalidation_reason"
+        ]
+      }
     }
   ],
   "$defs": {
@@ -55,61 +93,125 @@
       ],
       "additionalProperties": false,
       "properties": {
-        "protocol_hash": { "type": "string", "minLength": 1 },
+        "protocol_hash": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent_config_hashes": {
+          "type": "object",
+          "description": "SHA-256 of each stage's agent config file (the vendor binding: adapter, model, effort, budget). Recorded alongside protocol_hash because the experiment and the vendor binding vary independently, and both determine a run's numbers.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "schema_versions": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "prompt_hashes": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "adapter_versions": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "container_digests": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "input_checksums": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "boundary_waivers": {
           "type": "array",
           "description": "Bundle-relative paths this run's protocol waived from the boundary validator's oracle-name heuristic. Recorded alongside the protocol hash because a waiver weakens a contamination check, and an auditor should see it here rather than having to find it in the protocol file.",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
     "stage_outcome": {
       "type": "object",
-      "required": ["stage", "adapter", "attempts", "final_exit_code", "usage"],
+      "required": [
+        "stage",
+        "adapter",
+        "attempts",
+        "final_exit_code",
+        "usage"
+      ],
       "additionalProperties": false,
       "properties": {
         "stage": {
           "type": "string",
-          "enum": ["reasoner-1", "reasoner-2", "reasoner-3"]
+          "enum": [
+            "reasoner-1",
+            "reasoner-2",
+            "reasoner-3"
+          ]
         },
-        "adapter": { "type": "string", "minLength": 1 },
-        "adapter_version": { "type": "string" },
-        "attempts": { "type": "integer", "minimum": 1 },
-        "final_exit_code": { "type": "integer" },
-        "started_at": { "type": "string", "format": "date-time" },
-        "finished_at": { "type": "string", "format": "date-time" },
-        "usage": { "$ref": "#/$defs/usage" },
-        "output_path": { "type": "string" }
+        "adapter": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapter_version": {
+          "type": "string"
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "final_exit_code": {
+          "type": "integer"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "usage": {
+          "$ref": "#/$defs/usage"
+        },
+        "output_path": {
+          "type": "string"
+        }
       }
     },
     "usage": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "input_tokens": { "type": "integer", "minimum": 0 },
-        "output_tokens": { "type": "integer", "minimum": 0 },
-        "tool_calls": { "type": "integer", "minimum": 0 },
-        "cost_usd": { "type": "number", "minimum": 0 }
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tool_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost_usd": {
+          "type": "number",
+          "minimum": 0
+        }
       }
     }
   }

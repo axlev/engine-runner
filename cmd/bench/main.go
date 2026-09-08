@@ -39,6 +39,7 @@ type config struct {
 	workspaceRoot string
 	resultsRoot   string
 	adapterImage  string
+	agentsDir     string
 }
 
 func parseArgs(args []string) (config, error) {
@@ -47,12 +48,13 @@ func parseArgs(args []string) (config, error) {
 	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "repository root, used to resolve the protocol's prompt/schema paths")
 	fs.StringVar(&cfg.protocolPath, "protocol", "configs/protocols/pilot-v1.yaml", "path to the protocol YAML file")
 	fs.StringVar(&cfg.bundleRoot, "bundle", "", "path to the case's prospective/ directory (required)")
-	fs.StringVar(&cfg.caseID, "case-id", "", "case identifier; also selects the FixtureAdapter scenario when the protocol's adapter is \"fixture\" (required)")
+	fs.StringVar(&cfg.caseID, "case-id", "", "case identifier; also selects the FixtureAdapter scenario when an agent config names \"fixture\" (required)")
 	fs.StringVar(&cfg.runID, "run-id", "", "run identifier (default: generated from the current time and case-id)")
-	fs.StringVar(&cfg.fixturesDir, "fixtures-dir", "fixtures", "fixtures root, used when the protocol's adapter is \"fixture\"")
+	fs.StringVar(&cfg.fixturesDir, "fixtures-dir", "fixtures", "fixtures root, used when an agent config names \"fixture\"")
 	fs.StringVar(&cfg.workspaceRoot, "workspace-root", "build/cache/runs", "root under which fresh per-attempt workspace directories are created")
 	fs.StringVar(&cfg.resultsRoot, "results-root", "build/results", "root under which the sealed run directory is written")
-	fs.StringVar(&cfg.adapterImage, "adapter-image", "", "container image to run the vendor CLI in, used when the protocol's adapter is \"claude\" or \"codex\"")
+	fs.StringVar(&cfg.adapterImage, "adapter-image", "", "container image to run the vendor CLI in, used when an agent config names \"claude\" or \"codex\"")
+	fs.StringVar(&cfg.agentsDir, "agents", "fixtures/agents", "directory of per-stage agent configs (the vendor binding: adapter, model, effort, budget). Use configs/agents for a real vendor run")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -68,21 +70,37 @@ func parseArgs(args []string) (config, error) {
 	return cfg, nil
 }
 
-// buildAdapter is the entire surface a provider swap touches: changing
-// protocol.Adapter in a YAML file selects a different case here with no
+// buildAdapters constructs one adapter per distinct vendor the agent set
+// names. This is the entire surface a provider swap touches: pointing
+// -agents at a different directory selects different cases here with no
 // other code change, which is Milestone 2's exit criterion ("swapping
 // providers requires configuration changes only") made concrete.
-func buildAdapter(protocol *orchestrator.Protocol, cfg config) (adapters.AgentAdapter, error) {
-	switch protocol.Adapter {
-	case "fixture":
-		return fixture.New(cfg.fixturesDir)
-	case "claude":
-		return claude.New(cfg.adapterImage, nil)
-	case "codex":
-		return codex.New(cfg.adapterImage, nil)
-	default:
-		return nil, fmt.Errorf("adapter %q is not implemented", protocol.Adapter)
+//
+// An agent set may name different vendors for different stages, so this
+// returns a map rather than a single adapter.
+func buildAdapters(agentSet orchestrator.AgentSet, cfg config) (map[string]adapters.AgentAdapter, error) {
+	built := map[string]adapters.AgentAdapter{}
+	for _, name := range agentSet.Adapters() {
+		var (
+			a   adapters.AgentAdapter
+			err error
+		)
+		switch name {
+		case "fixture":
+			a, err = fixture.New(cfg.fixturesDir)
+		case "claude":
+			a, err = claude.New(cfg.adapterImage, nil)
+		case "codex":
+			a, err = codex.New(cfg.adapterImage, nil)
+		default:
+			return nil, fmt.Errorf("adapter %q is not implemented", name)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("constructing adapter %q: %w", name, err)
+		}
+		built[name] = a
 	}
+	return built, nil
 }
 
 // run executes one case end to end and always attempts to seal whatever
@@ -102,12 +120,25 @@ func run(args []string, stdout io.Writer) error {
 		return fmt.Errorf("loading protocol: %w", err)
 	}
 
-	adapter, err := buildAdapter(protocol, cfg)
+	agentSet, err := orchestrator.LoadAgentSet(cfg.agentsDir)
 	if err != nil {
-		return fmt.Errorf("constructing adapter: %w", err)
+		return fmt.Errorf("loading agent set: %w", err)
 	}
 
-	o, err := orchestrator.New(cfg.repoRoot, cfg.protocolPath, protocol, adapter, cfg.workspaceRoot)
+	built, err := buildAdapters(agentSet, cfg)
+	if err != nil {
+		return err
+	}
+
+	o, err := orchestrator.New(orchestrator.Options{
+		RepoRoot:      cfg.repoRoot,
+		ProtocolPath:  cfg.protocolPath,
+		Protocol:      protocol,
+		AgentsDir:     cfg.agentsDir,
+		AgentSet:      agentSet,
+		Adapters:      built,
+		WorkspaceRoot: cfg.workspaceRoot,
+	})
 	if err != nil {
 		return fmt.Errorf("constructing orchestrator: %w", err)
 	}

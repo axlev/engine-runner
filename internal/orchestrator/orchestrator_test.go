@@ -16,7 +16,36 @@ const (
 	pilotV1Path      = "../../configs/protocols/pilot-v1.yaml"
 	happyPathBundle  = "../../fixtures/cases/happy-path/prospective"
 	fixturesRootPath = "../../fixtures"
+	fixtureAgentsDir = "../../fixtures/agents"
 )
+
+func loadFixtureAgents(t *testing.T) AgentSet {
+	t.Helper()
+	set, err := LoadAgentSet(fixtureAgentsDir)
+	if err != nil {
+		t.Fatalf("LoadAgentSet(%q): %v", fixtureAgentsDir, err)
+	}
+	return set
+}
+
+// newOrch wires an orchestrator over the fixture agent set - the smoke-test
+// vendor binding - leaving the protocol free to be whatever the test needs.
+func newOrch(t *testing.T, protocol *Protocol, adapter adapters.AgentAdapter, workspaceRoot string) *Orchestrator {
+	t.Helper()
+	o, err := New(Options{
+		RepoRoot:      repoRoot,
+		ProtocolPath:  pilotV1Path,
+		Protocol:      protocol,
+		AgentsDir:     fixtureAgentsDir,
+		AgentSet:      loadFixtureAgents(t),
+		Adapters:      map[string]adapters.AgentAdapter{"fixture": adapter},
+		WorkspaceRoot: workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return o
+}
 
 func loadPilotV1(t *testing.T) *Protocol {
 	t.Helper()
@@ -40,9 +69,6 @@ func TestLoadPilotV1Protocol(t *testing.T) {
 	p := loadPilotV1(t)
 	if p.Version != "pilot-v1" {
 		t.Errorf("Version = %q, want pilot-v1", p.Version)
-	}
-	if p.Adapter != "fixture" {
-		t.Errorf("Adapter = %q, want fixture", p.Adapter)
 	}
 	if !p.Handoffs.EnableAToB {
 		t.Errorf("Handoffs.EnableAToB = false, want true (section 6.4: pilot v1 enables this handoff)")
@@ -88,10 +114,7 @@ func TestOrchestratorHappyPathEndToEnd(t *testing.T) {
 	adapter := newFixtureAdapter(t)
 	work := t.TempDir()
 
-	o, err := New(repoRoot, pilotV1Path, protocol, adapter, work)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	o := newOrch(t, protocol, adapter, work)
 
 	outcome, err := o.Run(context.Background(), "run-happy", "happy-path", happyPathBundle)
 	if err != nil {
@@ -139,10 +162,7 @@ func TestOrchestratorRetryRecoversMidRun(t *testing.T) {
 	adapter := newFixtureAdapter(t)
 	work := t.TempDir()
 
-	o, err := New(repoRoot, pilotV1Path, protocol, adapter, work)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	o := newOrch(t, protocol, adapter, work)
 
 	outcome, err := o.Run(context.Background(), "run-retry", "orchestrator-retry-recovery", happyPathBundle)
 	if err != nil {
@@ -177,10 +197,7 @@ func TestOrchestratorFailsFastAndStopsAfterExhaustingRetries(t *testing.T) {
 	adapter := newFixtureAdapter(t)
 	work := t.TempDir()
 
-	o, err := New(repoRoot, pilotV1Path, protocol, adapter, work)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	o := newOrch(t, protocol, adapter, work)
 
 	// "schema-violation" only defines behavior for reasoner-1, on purpose:
 	// if the orchestrator incorrectly proceeded to reasoner-2 after
@@ -219,10 +236,7 @@ func TestOrchestratorReasoner2NeverSeesReviewAWhenHandoffDisabled(t *testing.T) 
 	adapter := newFixtureAdapter(t)
 	work := t.TempDir()
 
-	o, err := New(repoRoot, pilotV1Path, &disabled, adapter, work)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	o := newOrch(t, &disabled, adapter, work)
 
 	outcome, err := o.Run(context.Background(), "run-no-handoff", "happy-path", happyPathBundle)
 	if err != nil {
@@ -286,10 +300,7 @@ func TestBoundaryValidationRejectsBeforeAnyAdapterCall(t *testing.T) {
 		t.Fatalf("fixture.New: %v", err)
 	}
 
-	o, err := New(repoRoot, pilotV1Path, protocol, adapter, t.TempDir())
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	o := newOrch(t, protocol, adapter, t.TempDir())
 
 	outcome, runErr := o.Run(context.Background(), "run-contaminated", "happy-path", contaminatedBundle(t))
 	if runErr == nil {
@@ -314,10 +325,7 @@ func TestBoundaryValidationRejectsBeforeAnyAdapterCall(t *testing.T) {
 
 func TestBoundaryValidationReportIsAttachedOnSuccessToo(t *testing.T) {
 	protocol := loadPilotV1(t)
-	o, err := New(repoRoot, pilotV1Path, protocol, newFixtureAdapter(t), t.TempDir())
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
+	o := newOrch(t, protocol, newFixtureAdapter(t), t.TempDir())
 	outcome, err := o.Run(context.Background(), "run-clean", "happy-path", happyPathBundle)
 	if err != nil {
 		t.Fatalf("Run: %v", err)

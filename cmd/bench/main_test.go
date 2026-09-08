@@ -18,6 +18,7 @@ func TestRunHappyPathEndToEnd(t *testing.T) {
 	err := run([]string{
 		"-repo-root", "../..",
 		"-protocol", "../../configs/protocols/pilot-v1.yaml",
+		"-agents", "../../fixtures/agents",
 		"-fixtures-dir", "../../fixtures",
 		"-bundle", happyPathBundle,
 		"-case-id", "happy-path",
@@ -58,6 +59,7 @@ func TestRunFailedCaseStillWritesResultsAndReturnsError(t *testing.T) {
 	err := run([]string{
 		"-repo-root", "../..",
 		"-protocol", "../../configs/protocols/pilot-v1.yaml",
+		"-agents", "../../fixtures/agents",
 		"-fixtures-dir", "../../fixtures",
 		"-bundle", happyPathBundle,
 		"-case-id", "schema-violation",
@@ -90,25 +92,13 @@ func TestRunRequiresBundleAndCaseID(t *testing.T) {
 }
 
 func TestRunRejectsUnimplementedAdapter(t *testing.T) {
-	dir := t.TempDir()
-	protocolPath := filepath.Join(dir, "protocol.yaml")
-	content := `
-protocol_version: v1
-adapter: gemini
-retry_policy:
-  max_attempts: 1
-stages:
-  reasoner-1: {prompt: p.md, model: m, output_schema: s.json}
-  reasoner-2: {prompt: p.md, model: m, output_schema: s.json}
-  reasoner-3: {prompt: p.md, model: m, output_schema: s.json}
-`
-	if err := os.WriteFile(protocolPath, []byte(content), 0o644); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	agentsDir := writeAgentSet(t, "gemini", "some-model")
 
 	var stdout bytes.Buffer
 	err := run([]string{
-		"-protocol", protocolPath,
+		"-repo-root", "../..",
+		"-protocol", "../../configs/protocols/pilot-v1.yaml",
+		"-agents", agentsDir,
 		"-bundle", happyPathBundle,
 		"-case-id", "happy-path",
 		"-results-root", t.TempDir(),
@@ -125,23 +115,16 @@ stages:
 // TestRunAcceptsClaudeAndCodexAdapterNames proves the exit criterion in
 // docs/system-design.md section 15's Milestone 2 ("swapping providers
 // requires configuration changes only") at the config-parsing/wiring level:
-// changing only the protocol's "adapter" field selects a different
-// AgentAdapter with no other code change. It does not exercise a real
+// pointing -agents at a different directory selects a different
+// AgentAdapter with no other code change, and the protocol is byte-identical
+// across both arms. It does not exercise a real
 // invocation - neither adapter has a container image configured here, so
 // each fails fast with a clear "Image is not configured" error rather than
 // attempting network access.
 func TestRunAcceptsClaudeAndCodexAdapterNames(t *testing.T) {
 	for _, vendor := range []string{"claude", "codex"} {
 		t.Run(vendor, func(t *testing.T) {
-			dir := t.TempDir()
-			protocolPath := filepath.Join(dir, "protocol.yaml")
-			content := "protocol_version: v1\nadapter: " + vendor + "\nretry_policy:\n  max_attempts: 1\nstages:\n" +
-				"  reasoner-1: {prompt: fixtures/prompts/placeholder.md, model: m, output_schema: schemas/review-a.schema.json}\n" +
-				"  reasoner-2: {prompt: fixtures/prompts/placeholder.md, model: m, output_schema: schemas/review-b.schema.json}\n" +
-				"  reasoner-3: {prompt: fixtures/prompts/placeholder.md, model: m, output_schema: schemas/review-c.schema.json}\n"
-			if err := os.WriteFile(protocolPath, []byte(content), 0o644); err != nil {
-				t.Fatalf("setup: %v", err)
-			}
+			agentsDir := writeAgentSet(t, vendor, "some-model")
 
 			t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 			t.Setenv("OPENAI_API_KEY", "sk-test")
@@ -149,7 +132,8 @@ func TestRunAcceptsClaudeAndCodexAdapterNames(t *testing.T) {
 			var stdout bytes.Buffer
 			err := run([]string{
 				"-repo-root", "../..",
-				"-protocol", protocolPath,
+				"-protocol", "../../configs/protocols/pilot-v1.yaml",
+				"-agents", agentsDir,
 				"-bundle", happyPathBundle,
 				"-case-id", "happy-path",
 				"-results-root", t.TempDir(),
@@ -163,4 +147,19 @@ func TestRunAcceptsClaudeAndCodexAdapterNames(t *testing.T) {
 			}
 		})
 	}
+}
+
+// writeAgentSet builds a throwaway agent set naming one vendor for all three
+// stages. The vendor binding now lives outside the protocol, so tests that
+// exercise adapter selection vary this rather than the protocol file.
+func writeAgentSet(t *testing.T, adapter, model string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, stage := range []string{"reasoner-1", "reasoner-2", "reasoner-3"} {
+		content := "adapter: " + adapter + "\nmodel: " + model + "\nreasoning_level: standard\n"
+		if err := os.WriteFile(filepath.Join(dir, stage+".yaml"), []byte(content), 0o644); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+	}
+	return dir
 }

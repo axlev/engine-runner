@@ -17,12 +17,13 @@ import (
 // from the protocol's declared version strings alone, which could drift
 // from the file on disk without anyone noticing.
 type Fingerprints struct {
-	ProtocolHash     string            `json:"protocol_hash"`
-	SchemaVersions   map[string]string `json:"schema_versions"`
-	PromptHashes     map[string]string `json:"prompt_hashes"`
-	AdapterVersions  map[string]string `json:"adapter_versions"`
-	ContainerDigests map[string]string `json:"container_digests,omitempty"`
-	InputChecksums   map[string]string `json:"input_checksums"`
+	ProtocolHash      string            `json:"protocol_hash"`
+	AgentConfigHashes map[string]string `json:"agent_config_hashes,omitempty"`
+	SchemaVersions    map[string]string `json:"schema_versions"`
+	PromptHashes      map[string]string `json:"prompt_hashes"`
+	AdapterVersions   map[string]string `json:"adapter_versions"`
+	ContainerDigests  map[string]string `json:"container_digests,omitempty"`
+	InputChecksums    map[string]string `json:"input_checksums"`
 
 	// BoundaryWaivers lists the paths this run's protocol waived from the
 	// oracle-name heuristic. It belongs in the fingerprints because a
@@ -46,12 +47,13 @@ func sha256HexFile(path string) (string, error) {
 // prospective bundle's own checksums.sha256 verbatim. It does not read
 // AdapterVersions - those are only known once stages have actually run, and
 // are filled in separately from the run's attempt records.
-func computeStaticFingerprints(protocolPath, repoRoot, bundleRoot string, protocol *Protocol) (Fingerprints, error) {
+func computeStaticFingerprints(protocolPath, agentsDir, repoRoot, bundleRoot string, protocol *Protocol) (Fingerprints, error) {
 	fp := Fingerprints{
-		SchemaVersions:  map[string]string{},
-		PromptHashes:    map[string]string{},
-		AdapterVersions: map[string]string{},
-		InputChecksums:  map[string]string{},
+		SchemaVersions:    map[string]string{},
+		PromptHashes:      map[string]string{},
+		AdapterVersions:   map[string]string{},
+		AgentConfigHashes: map[string]string{},
+		InputChecksums:    map[string]string{},
 	}
 
 	protoHash, err := sha256HexFile(protocolPath)
@@ -63,6 +65,17 @@ func computeStaticFingerprints(protocolPath, repoRoot, bundleRoot string, protoc
 	if waived := protocol.BoundaryValidation.WaivedOracleShapedPaths; len(waived) > 0 {
 		fp.BoundaryWaivers = append([]string(nil), waived...)
 		sort.Strings(fp.BoundaryWaivers)
+	}
+
+	// The agent set is hashed alongside the protocol: a run's vendor binding
+	// is as much a part of what produced its numbers as the experiment is,
+	// and the two vary independently.
+	for _, stage := range stageOrder {
+		agentHash, err := sha256HexFile(filepath.Join(agentsDir, string(stage)+".yaml"))
+		if err != nil {
+			return Fingerprints{}, err
+		}
+		fp.AgentConfigHashes[string(stage)] = agentHash
 	}
 
 	for _, stage := range stageOrder {

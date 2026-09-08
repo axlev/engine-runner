@@ -128,12 +128,10 @@ Known gaps, deliberately left open:
   there. Making those miner changes is a `coder-miner` job, not this
   role's: the same context that holds the validator's heuristics should
   not also write the export they judge, or it will teach to the test.
-- `configs/agents/*.yaml` from the documented layout is not created; its
-  contract isn't specified and isn't load-bearing for the current
-  milestones.
 - Container execution is unit-tested at the argument-construction level but
   has never been run live (no Docker daemon access in the development
   sandbox, and no adapter container image has been built yet).
-- `pilot-v1.yaml` still points at a placeholder prompt; authoring the real
-  frozen reasoner prompts is Milestone 4 work.
+- `configs/agents/` names the claude adapter but is not runnable: no adapter
+  container image has been built. `fixtures/agents/` is the smoke-test
+  binding and works today.
 

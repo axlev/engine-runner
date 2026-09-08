@@ -8,14 +8,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Protocol is the frozen, versioned configuration for one cohort: which
-// adapter to use, which handoffs are enabled, and each stage's prompt,
-// model, budget, and output schema. Design principle 6: "A cohort runs
-// under a frozen protocol. Prompts are not tuned per case." Nothing in this
-// package mutates a loaded Protocol.
+// Protocol is the frozen, versioned definition of one cohort's experiment:
+// which handoffs are enabled, each stage's prompt and output schema, the
+// stopping rules, and any boundary-validation waivers. Design principle 6:
+// "A cohort runs under a frozen protocol. Prompts are not tuned per case."
+// Nothing in this package mutates a loaded Protocol.
+//
+// It deliberately carries no vendor detail. Which adapter and model run a
+// stage lives in the agent set (agents.go), so the same frozen cohort can be
+// smoke-tested through the fixture adapter and then run for real through a
+// vendor without minting a new protocol version.
 type Protocol struct {
 	Version            string                   `yaml:"protocol_version"`
-	Adapter            string                   `yaml:"adapter"`
 	Handoffs           HandoffConfig            `yaml:"handoffs"`
 	Stages             map[string]StageProtocol `yaml:"stages"`
 	RetryPolicy        RetryPolicy              `yaml:"retry_policy"`
@@ -46,12 +50,12 @@ type HandoffConfig struct {
 	EnableAToB bool `yaml:"enable_a_to_b"`
 }
 
+// StageProtocol is one stage's experimental definition. It carries no
+// vendor detail: which adapter and model run this stage, at what effort and
+// under what budget, is the agent set's business (see agents.go).
 type StageProtocol struct {
-	Prompt         string       `yaml:"prompt"`
-	Model          string       `yaml:"model"`
-	ReasoningLevel string       `yaml:"reasoning_level"`
-	OutputSchema   string       `yaml:"output_schema"`
-	Budget         BudgetConfig `yaml:"budget"`
+	Prompt       string `yaml:"prompt"`
+	OutputSchema string `yaml:"output_schema"`
 }
 
 type BudgetConfig struct {
@@ -104,9 +108,6 @@ func (p Protocol) validate() error {
 	if p.Version == "" {
 		return fmt.Errorf("missing protocol_version")
 	}
-	if p.Adapter == "" {
-		return fmt.Errorf("missing adapter")
-	}
 	if p.RetryPolicy.MaxAttempts < 1 {
 		return fmt.Errorf("retry_policy.max_attempts must be >= 1, got %d", p.RetryPolicy.MaxAttempts)
 	}
@@ -117,9 +118,6 @@ func (p Protocol) validate() error {
 		}
 		if sp.Prompt == "" {
 			return fmt.Errorf("stage %q missing prompt", stage)
-		}
-		if sp.Model == "" {
-			return fmt.Errorf("stage %q missing model", stage)
 		}
 		if sp.OutputSchema == "" {
 			return fmt.Errorf("stage %q missing output_schema", stage)

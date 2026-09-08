@@ -8,16 +8,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/axlev/engine-runner/internal/adapters"
 	"github.com/axlev/engine-runner/internal/adapters/fixture"
 	"github.com/axlev/engine-runner/internal/orchestrator"
 	"github.com/santhosh-tekuri/jsonschema/v5"
 )
 
 const (
-	repoRoot        = "../.."
-	pilotV1Path     = "../../configs/protocols/pilot-v1.yaml"
-	happyPathBundle = "../../fixtures/cases/happy-path/prospective"
-	fixturesRoot    = "../../fixtures"
+	repoRoot         = "../.."
+	pilotV1Path      = "../../configs/protocols/pilot-v1.yaml"
+	happyPathBundle  = "../../fixtures/cases/happy-path/prospective"
+	fixturesRoot     = "../../fixtures"
+	fixtureAgentsDir = "../../fixtures/agents"
 )
 
 func newOrchestrator(t *testing.T) *orchestrator.Orchestrator {
@@ -30,7 +32,19 @@ func newOrchestrator(t *testing.T) *orchestrator.Orchestrator {
 	if err != nil {
 		t.Fatalf("fixture.New: %v", err)
 	}
-	o, err := orchestrator.New(repoRoot, pilotV1Path, protocol, adapter, t.TempDir())
+	agentSet, err := orchestrator.LoadAgentSet(fixtureAgentsDir)
+	if err != nil {
+		t.Fatalf("LoadAgentSet: %v", err)
+	}
+	o, err := orchestrator.New(orchestrator.Options{
+		RepoRoot:      repoRoot,
+		ProtocolPath:  pilotV1Path,
+		Protocol:      protocol,
+		AgentsDir:     fixtureAgentsDir,
+		AgentSet:      agentSet,
+		Adapters:      map[string]adapters.AgentAdapter{"fixture": adapter},
+		WorkspaceRoot: t.TempDir(),
+	})
 	if err != nil {
 		t.Fatalf("orchestrator.New: %v", err)
 	}
@@ -318,12 +332,13 @@ func TestPromptIsPreservedVerbatimInResult(t *testing.T) {
 		t.Fatalf("WriteRun: %v", err)
 	}
 
-	want, err := os.ReadFile(filepath.Join(repoRoot, "fixtures/prompts/placeholder.md"))
-	if err != nil {
-		t.Fatalf("reading the protocol's prompt file: %v", err)
-	}
-
+	// Each stage has its own prompt under the protocol, so compare per stage
+	// rather than against one shared file.
 	for _, stage := range []string{"reasoner-1", "reasoner-2", "reasoner-3"} {
+		want, err := os.ReadFile(filepath.Join(repoRoot, "prompts/pilot-v1", stage+".md"))
+		if err != nil {
+			t.Fatalf("%s: reading the protocol's prompt file: %v", stage, err)
+		}
 		got, err := os.ReadFile(filepath.Join(runDir, "stages", stage, "prompt.md"))
 		if err != nil {
 			t.Fatalf("%s: prompt not preserved in result: %v", stage, err)
