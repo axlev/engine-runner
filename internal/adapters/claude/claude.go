@@ -132,13 +132,16 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 	if runErr != nil && len(result.Stdout) == 0 {
 		// The container never produced a response envelope at all (e.g.
 		// context cancellation, or docker itself failed to start it) -
-		// nothing to parse.
-		return base, runErr
+		// nothing to parse. stderr is the only diagnostic that exists in
+		// that case, so it must travel with the error: a docker-level
+		// failure such as a denied socket is otherwise indistinguishable
+		// from a CLI crash, both surfacing as "exited with code 1".
+		return base, withStderr(runErr, result.Stderr)
 	}
 
 	resp, parseErr := parseResponse(result.Stdout)
 	if parseErr != nil {
-		return base, fmt.Errorf("claude: %w (stderr: %s)", parseErr, result.Stderr)
+		return base, withStderr(fmt.Errorf("claude: %w", parseErr), result.Stderr)
 	}
 	base.Usage = adapters.Usage{
 		InputTokens:  resp.Usage.InputTokens,
@@ -160,4 +163,24 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 	base.OutputPath = outPath
 
 	return base, nil
+}
+
+// maxStderrInError bounds how much of a failed container's stderr is folded
+// into the returned error. Enough to identify the failure, not so much that
+// a CLI dumping megabytes makes an error unreadable or bloats telemetry,
+// which stores these strings verbatim.
+const maxStderrInError = 2000
+
+// withStderr attaches a container's stderr to an error. Empty stderr is
+// omitted rather than rendered as "(stderr: )", which reads like the
+// container said nothing when in fact nothing was captured.
+func withStderr(err error, stderrBytes []byte) error {
+	trimmed := strings.TrimSpace(string(stderrBytes))
+	if trimmed == "" {
+		return err
+	}
+	if len(trimmed) > maxStderrInError {
+		trimmed = trimmed[:maxStderrInError] + "... (truncated)"
+	}
+	return fmt.Errorf("%w (stderr: %s)", err, trimmed)
 }
