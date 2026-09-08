@@ -42,8 +42,16 @@ A coding agent working here **must not**:
 ## Layout rules
 
 - Git repositories exist only under `repos/`.
-- Compiled binaries, container artifacts, and run scratch live under
+- Compiled binaries, container artifacts, and sealed results live under
   `build/` (gitignored) — never committed.
+- **Per-attempt workspaces are the exception: they live outside the
+  repository** (`~/.cache/engine-runner/runs` by default). They are
+  bind-mounted into stage containers, and `internal/runner` refuses to
+  mount `/home/alex/repos` at all, so a workspace inside the repo makes
+  every live run fail on the mount guard. The guard is not the thing to
+  relax: a directory mounted into a reasoning container should not live in
+  the tree that guard exists to protect. Results are unaffected — the
+  engine writes them and never mounts them.
 - Real production results live under `/home/alex/data/results`, outside
   this repository entirely.
 - Source control here holds code, prompts, protocol manifests, schemas,

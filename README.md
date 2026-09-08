@@ -70,6 +70,7 @@ property the whole design exists to support.
 | `-run-id` | generated | Run identifier |
 | `-protocol` | `configs/protocols/pilot-v1.yaml` | Frozen protocol to run under |
 | `-results-root` | `build/results` | Where the sealed run tree is written |
+| `-workspace-root` | `~/.cache/engine-runner/runs` | Per-attempt scratch. Outside the repo on purpose: it is bind-mounted into stage containers, which may never see the engine's source |
 | `-agents` | `fixtures/agents` | Vendor binding directory; use `configs/agents` for a real run |
 | `-adapter-image` | — | Container image, for the `claude` / `codex` adapters |
 

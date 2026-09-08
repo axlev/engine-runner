@@ -163,3 +163,41 @@ func writeAgentSet(t *testing.T, adapter, model string) string {
 	}
 	return dir
 }
+
+// TestDefaultWorkspaceRootIsOutsideTheRepository pins a boundary, not a
+// preference. internal/runner refuses to mount the repository into a stage
+// container (system-design section 9), and the per-attempt workspace IS
+// bind-mounted. A default inside the repo makes every live run fail on the
+// mount guard - which is exactly what happened before this was changed.
+func TestDefaultWorkspaceRootIsOutsideTheRepository(t *testing.T) {
+	got := defaultWorkspaceRoot()
+
+	if !filepath.IsAbs(got) {
+		t.Fatalf("defaultWorkspaceRoot() = %q, want an absolute path: a relative one resolves against the repo and trips the same guard", got)
+	}
+
+	repoRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("resolving repo root: %v", err)
+	}
+	if got == repoRoot || strings.HasPrefix(got, repoRoot+string(filepath.Separator)) {
+		t.Errorf("defaultWorkspaceRoot() = %q, which is inside the repository at %q; it is bind-mounted into stage containers and will be refused", got, repoRoot)
+	}
+}
+
+// The fallback matters: a machine with no resolvable home must not silently
+// land back inside the repository.
+func TestDefaultWorkspaceRootFallbackIsStillOutsideTheRepository(t *testing.T) {
+	// os.UserCacheDir consults HOME on unix and fails when it is unset.
+	t.Setenv("XDG_CACHE_HOME", "")
+	t.Setenv("HOME", "")
+
+	got := defaultWorkspaceRoot()
+	repoRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("resolving repo root: %v", err)
+	}
+	if !filepath.IsAbs(got) || strings.HasPrefix(got, repoRoot+string(filepath.Separator)) {
+		t.Errorf("fallback defaultWorkspaceRoot() = %q, want an absolute path outside %q", got, repoRoot)
+	}
+}

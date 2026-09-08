@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/axlev/engine-runner/internal/adapters"
@@ -51,7 +52,7 @@ func parseArgs(args []string) (config, error) {
 	fs.StringVar(&cfg.caseID, "case-id", "", "case identifier; also selects the FixtureAdapter scenario when an agent config names \"fixture\" (required)")
 	fs.StringVar(&cfg.runID, "run-id", "", "run identifier (default: generated from the current time and case-id)")
 	fs.StringVar(&cfg.fixturesDir, "fixtures-dir", "fixtures", "fixtures root, used when an agent config names \"fixture\"")
-	fs.StringVar(&cfg.workspaceRoot, "workspace-root", "build/cache/runs", "root under which fresh per-attempt workspace directories are created")
+	fs.StringVar(&cfg.workspaceRoot, "workspace-root", defaultWorkspaceRoot(), "root under which fresh per-attempt workspace directories are created; must be outside the repository, since it is bind-mounted into stage containers")
 	fs.StringVar(&cfg.resultsRoot, "results-root", "build/results", "root under which the sealed run directory is written")
 	fs.StringVar(&cfg.adapterImage, "adapter-image", "", "container image to run the vendor CLI in, used when an agent config names \"claude\" or \"codex\"")
 	fs.StringVar(&cfg.agentsDir, "agents", "fixtures/agents", "directory of per-stage agent configs (the vendor binding: adapter, model, effort, budget). Use configs/agents for a real vendor run")
@@ -68,6 +69,31 @@ func parseArgs(args []string) (config, error) {
 		cfg.runID = time.Now().UTC().Format("20060102T150405Z") + "-" + cfg.caseID
 	}
 	return cfg, nil
+}
+
+// defaultWorkspaceRoot picks a per-attempt workspace location OUTSIDE the
+// repository, and that placement is a boundary requirement rather than a
+// tidiness preference.
+//
+// internal/runner refuses to mount /home/alex/repos into a stage container
+// (docs/system-design.md section 9: a reasoning stage must never see the
+// engine's own source). The old default, build/cache/runs, sat inside the
+// repository, so every live run was refused by that guard - correctly. The
+// guard is not the thing to relax: a directory that gets bind-mounted into
+// a reasoning container has no business living inside the tree the guard
+// exists to protect, where one wrong "../" would mount the source.
+//
+// Results are unaffected and still default under build/: they are written
+// by the engine and never mounted into a container.
+//
+// Honours XDG_CACHE_HOME. Falls back to the system temp dir rather than to
+// a repository-relative path, so a machine with no resolvable home cannot
+// silently reintroduce the mount that was just forbidden.
+func defaultWorkspaceRoot() string {
+	if dir, err := os.UserCacheDir(); err == nil && dir != "" {
+		return filepath.Join(dir, "engine-runner", "runs")
+	}
+	return filepath.Join(os.TempDir(), "engine-runner", "runs")
 }
 
 // buildAdapters constructs one adapter per distinct vendor the agent set
