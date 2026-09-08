@@ -101,6 +101,12 @@ Stop and ask before, not after:
   what was actually run.
 - State what you did not verify.
 
+## Verification artifacts
+
+Do not delete a run tree in the same command that produces it. Clean up
+at the start of the next run, or in a separate command after the output
+has been read. If a result needs investigating, the tree must still exist.
+
 
 ## Current state
 
