@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/axlev/engine-runner/internal/adapters"
+	"github.com/axlev/engine-runner/internal/adapters/claude"
+	"github.com/axlev/engine-runner/internal/adapters/codex"
 	"github.com/axlev/engine-runner/internal/adapters/fixture"
 	"github.com/axlev/engine-runner/internal/orchestrator"
 	"github.com/axlev/engine-runner/internal/results"
@@ -36,6 +38,7 @@ type config struct {
 	fixturesDir   string
 	workspaceRoot string
 	resultsRoot   string
+	adapterImage  string
 }
 
 func parseArgs(args []string) (config, error) {
@@ -49,6 +52,7 @@ func parseArgs(args []string) (config, error) {
 	fs.StringVar(&cfg.fixturesDir, "fixtures-dir", "fixtures", "fixtures root, used when the protocol's adapter is \"fixture\"")
 	fs.StringVar(&cfg.workspaceRoot, "workspace-root", "build/cache/runs", "root under which fresh per-attempt workspace directories are created")
 	fs.StringVar(&cfg.resultsRoot, "results-root", "build/results", "root under which the sealed run directory is written")
+	fs.StringVar(&cfg.adapterImage, "adapter-image", "", "container image to run the vendor CLI in, used when the protocol's adapter is \"claude\" or \"codex\"")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -64,12 +68,20 @@ func parseArgs(args []string) (config, error) {
 	return cfg, nil
 }
 
+// buildAdapter is the entire surface a provider swap touches: changing
+// protocol.Adapter in a YAML file selects a different case here with no
+// other code change, which is Milestone 2's exit criterion ("swapping
+// providers requires configuration changes only") made concrete.
 func buildAdapter(protocol *orchestrator.Protocol, cfg config) (adapters.AgentAdapter, error) {
 	switch protocol.Adapter {
 	case "fixture":
 		return fixture.New(cfg.fixturesDir)
+	case "claude":
+		return claude.New(cfg.adapterImage, nil)
+	case "codex":
+		return codex.New(cfg.adapterImage, nil)
 	default:
-		return nil, fmt.Errorf("adapter %q is not implemented yet (only \"fixture\" is available in this milestone)", protocol.Adapter)
+		return nil, fmt.Errorf("adapter %q is not implemented", protocol.Adapter)
 	}
 }
 
