@@ -38,31 +38,40 @@ The cost is that you supply the binary. That's the intended trade.
 
 ## Building
 
-From the repository root:
+```bash
+docker/build.sh          # claude
+docker/build.sh codex
+```
 
-One `Dockerfile`, parameterized by vendor:
+The script copies the binary into the build context, derives the tag from
+`<vendor> --version`, and adds `sudo` only when the docker socket isn't
+reachable as you. Run it from anywhere — it locates the repository root
+itself.
+
+The tag is derived rather than typed on purpose. It has to name the CLI
+version inside the image, because the adapters record the adapter version
+separately from the image digest and the two must agree — a hand-typed tag
+is exactly how they stop agreeing.
+
+Copied binaries are gitignored — they're ~215MB and ~258MB.
+
+<details>
+<summary>The equivalent by hand</summary>
 
 ```bash
-# claude
 cp ~/.local/share/claude/versions/2.1.263 docker/claude
 docker build -f docker/Dockerfile \
   --build-arg VENDOR=claude --build-arg VENDOR_BINARY=claude \
   -t engine-runner/adapter-claude:2.1.263 docker
-
-# codex
-cp ~/.codex/packages/standalone/current/bin/codex docker/codex
-docker build -f docker/Dockerfile \
-  --build-arg VENDOR=codex --build-arg VENDOR_BINARY=codex \
-  -t engine-runner/adapter-codex:0.153.2 docker
 ```
+
+The trailing `docker` is the build context directory, not a stray word —
+`docker build` fails with "requires 1 argument" when it's dropped.
 
 A future vendor needing a different base can override it:
 `--build-arg BASE_IMAGE=...`.
 
-Copied binaries are gitignored — they're ~215MB and ~258MB.
-
-Tag the image with the CLI version it contains. The adapters record the
-adapter version separately from the image digest, and the two should agree.
+</details>
 
 ## Running a case against one
 

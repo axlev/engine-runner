@@ -14,17 +14,13 @@
 # would also put a second executable inside every reasoning container for
 # no benefit.
 #
-# Build (from the repository root):
+# Build with docker/build.sh, which derives the image tag from the CLI's
+# own --version so the tag cannot drift from the bytes inside the image:
 #
-#   cp ~/.local/share/claude/versions/2.1.263 docker/claude
-#   docker build -f docker/Dockerfile \
-#     --build-arg VENDOR=claude --build-arg VENDOR_BINARY=claude \
-#     -t engine-runner/adapter-claude:2.1.263 docker
+#   docker/build.sh          # claude
+#   docker/build.sh codex
 #
-#   cp ~/.codex/packages/standalone/current/bin/codex docker/codex
-#   docker build -f docker/Dockerfile \
-#     --build-arg VENDOR=codex --build-arg VENDOR_BINARY=codex \
-#     -t engine-runner/adapter-codex:0.153.2 docker
+# See docker/README.md for the equivalent by hand.
 #
 # NOTE: never built or run - there is no Docker daemon in the environment
 # this was written in. The vendor facts it encodes were verified (see
