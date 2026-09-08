@@ -30,8 +30,24 @@ esac
 # build context path is stable.
 cd "$(dirname "$(readlink -f "$0")")/.."
 
+# Running the whole script under sudo is the natural thing to try, and it
+# fails confusingly: $PATH becomes root's, the vendor CLI is installed under
+# the invoking user's home, and the only symptom is "not on PATH". Only the
+# docker command needs escalating, and that is handled below.
+if [ -n "${SUDO_USER:-}" ]; then
+    echo "build.sh: run this as $SUDO_USER, without sudo:" >&2
+    echo "    docker/build.sh ${VENDOR}" >&2
+    echo "  Only the docker command needs root, and the script adds sudo to" >&2
+    echo "  that command itself. Under sudo the whole script gets root's PATH," >&2
+    echo "  which cannot see $VENDOR in ~$SUDO_USER." >&2
+    exit 2
+fi
+
 if ! command -v "$VENDOR" >/dev/null 2>&1; then
-    echo "build.sh: $VENDOR is not on PATH; nothing to copy into the image" >&2
+    echo "build.sh: $VENDOR is not on PATH as $(id -un), so there is nothing" >&2
+    echo "  to copy into the image. The image contains the exact binary you" >&2
+    echo "  already have (docker/README.md: 'Why the binary is copied, not" >&2
+    echo "  installed'), so install or PATH-expose $VENDOR first." >&2
     exit 1
 fi
 

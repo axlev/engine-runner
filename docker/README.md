@@ -43,10 +43,14 @@ docker/build.sh          # claude
 docker/build.sh codex
 ```
 
-The script copies the binary into the build context, derives the tag from
-`<vendor> --version`, and adds `sudo` only when the docker socket isn't
-reachable as you. Run it from anywhere — it locates the repository root
-itself.
+Run it **as yourself, not under `sudo`** — it adds `sudo` to the `docker`
+command internally when the socket needs it. Running the whole script as
+root gives it root's `$PATH`, which can't see a vendor CLI installed under
+your home; it now says so rather than reporting a bare "not on PATH".
+
+It copies the binary into the build context, derives the tag from
+`<vendor> --version`, and can be run from anywhere — it locates the
+repository root itself.
 
 The tag is derived rather than typed on purpose. It has to name the CLI
 version inside the image, because the adapters record the adapter version
