@@ -4,9 +4,9 @@
 # anything under build/ here is disposable local/dev scratch output.
 /build/
 
-# Vendor CLI binaries copied into the docker build contexts (see
+# Vendor CLI binaries copied into the docker/ build context (see
 # docker/README.md). These are ~215MB (claude) and ~258MB (codex) and are
 # pinned per-operator, never committed.
-/docker/claude/claude
-/docker/codex/codex
-/docker/codex/codex-code-mode-host
+/docker/claude
+/docker/codex
+/docker/codex-code-mode-host

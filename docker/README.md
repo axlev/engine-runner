@@ -8,9 +8,23 @@ per [`docs/system-design.md`](../docs/system-design.md) section 9.
 > in an environment with no Docker daemon access. The first build is the
 > real test — expect to fix something.
 
+## One Dockerfile, two images
+
+The vendors differ only in which binary lands at which name, so the
+hardening rules — non-root user, CA certs, workspace layout, empty config
+home, no baked arguments — are stated once in a single parameterized
+`Dockerfile`. Duplicated rules in a security-relevant file drift the
+moment someone hardens one copy and forgets the other.
+
+They are still built as **two images**, deliberately. Section 9 requires
+capturing the image digest as run provenance; a shared image would change
+a claude run's digest whenever codex was upgraded, so the digest would
+stop meaning "what ran". It would also place a second executable inside
+every reasoning container for no benefit.
+
 ## Why the binary is copied, not installed
 
-Both Dockerfiles `COPY` a vendor CLI binary from the build context instead
+The Dockerfile `COPY`s a vendor CLI binary from the build context instead
 of running an installer script. Two reasons:
 
 1. **Pinning.** Section 12 requires pinning executable versions. Copying
@@ -26,15 +40,24 @@ The cost is that you supply the binary. That's the intended trade.
 
 From the repository root:
 
-```bash
-# claude (glibc-based image - the binary is dynamically linked)
-cp ~/.local/share/claude/versions/2.1.263 docker/claude/claude
-docker build -t engine-runner/adapter-claude:2.1.263 docker/claude
+One `Dockerfile`, parameterized by vendor:
 
-# codex (binary is statically linked, but the image still needs a shell)
-cp ~/.codex/packages/standalone/current/bin/codex docker/codex/codex
-docker build -t engine-runner/adapter-codex:0.153.2 docker/codex
+```bash
+# claude
+cp ~/.local/share/claude/versions/2.1.263 docker/claude
+docker build -f docker/Dockerfile \
+  --build-arg VENDOR=claude --build-arg VENDOR_BINARY=claude \
+  -t engine-runner/adapter-claude:2.1.263 docker
+
+# codex
+cp ~/.codex/packages/standalone/current/bin/codex docker/codex
+docker build -f docker/Dockerfile \
+  --build-arg VENDOR=codex --build-arg VENDOR_BINARY=codex \
+  -t engine-runner/adapter-codex:0.153.2 docker
 ```
+
+A future vendor needing a different base can override it:
+`--build-arg BASE_IMAGE=...`.
 
 Copied binaries are gitignored — they're ~215MB and ~258MB.
 
@@ -67,7 +90,7 @@ credential in the environment:
   protocol, where it can't be fingerprinted.
 - **No credentials.** They're injected per stage as scoped environment
   variables by the runner, never built into a layer.
-- **Not run as root.** Both images create a `reasoner` user (uid 10001).
+- **Not run as root.** The image creates a `reasoner` user (uid 10001).
   This is the in-image half of section 9's posture; the read-only input
   mount, disabled-by-default network, and resource limits come from
   `internal/runner`'s `ContainerSpec`.
