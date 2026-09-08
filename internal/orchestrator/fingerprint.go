@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -22,6 +23,13 @@ type Fingerprints struct {
 	AdapterVersions  map[string]string `json:"adapter_versions"`
 	ContainerDigests map[string]string `json:"container_digests,omitempty"`
 	InputChecksums   map[string]string `json:"input_checksums"`
+
+	// BoundaryWaivers lists the paths this run's protocol waived from the
+	// oracle-name heuristic. It belongs in the fingerprints because a
+	// waiver weakens a contamination check: someone auditing the result
+	// needs to see it here, alongside the protocol hash, not have to go
+	// find it in the protocol file.
+	BoundaryWaivers []string `json:"boundary_waivers,omitempty"`
 }
 
 func sha256HexFile(path string) (string, error) {
@@ -51,6 +59,11 @@ func computeStaticFingerprints(protocolPath, repoRoot, bundleRoot string, protoc
 		return Fingerprints{}, err
 	}
 	fp.ProtocolHash = protoHash
+
+	if waived := protocol.BoundaryValidation.WaivedOracleShapedPaths; len(waived) > 0 {
+		fp.BoundaryWaivers = append([]string(nil), waived...)
+		sort.Strings(fp.BoundaryWaivers)
+	}
 
 	for _, stage := range stageOrder {
 		sp := protocol.Stages[string(stage)]

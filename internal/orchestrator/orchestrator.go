@@ -119,7 +119,9 @@ func (o *Orchestrator) Run(ctx context.Context, runID, caseID, bundleRoot string
 	// (section 10 step 3). Section 12: a boundary-validation failure
 	// invalidates the case *before* LLM cost is incurred - so this returns
 	// without preparing a single stage context or invoking any adapter.
-	validation, err := boundaryvalidator.Validate(caseID, bundleRoot)
+	validation, err := boundaryvalidator.ValidateWithConfig(caseID, bundleRoot, boundaryvalidator.Config{
+		WaivedOracleShapedPaths: o.Protocol.BoundaryValidation.WaivedOracleShapedPaths,
+	})
 	if err != nil {
 		return outcome, fmt.Errorf("orchestrator: boundary validation could not run: %w", err)
 	}

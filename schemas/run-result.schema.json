@@ -75,6 +75,11 @@
         "input_checksums": {
           "type": "object",
           "additionalProperties": { "type": "string" }
+        },
+        "boundary_waivers": {
+          "type": "array",
+          "description": "Bundle-relative paths this run's protocol waived from the boundary validator's oracle-name heuristic. Recorded alongside the protocol hash because a waiver weakens a contamination check, and an auditor should see it here rather than having to find it in the protocol file.",
+          "items": { "type": "string" }
         }
       }
     },

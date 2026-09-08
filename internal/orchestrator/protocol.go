@@ -14,11 +14,29 @@ import (
 // under a frozen protocol. Prompts are not tuned per case." Nothing in this
 // package mutates a loaded Protocol.
 type Protocol struct {
-	Version     string                   `yaml:"protocol_version"`
-	Adapter     string                   `yaml:"adapter"`
-	Handoffs    HandoffConfig            `yaml:"handoffs"`
-	Stages      map[string]StageProtocol `yaml:"stages"`
-	RetryPolicy RetryPolicy              `yaml:"retry_policy"`
+	Version            string                   `yaml:"protocol_version"`
+	Adapter            string                   `yaml:"adapter"`
+	Handoffs           HandoffConfig            `yaml:"handoffs"`
+	Stages             map[string]StageProtocol `yaml:"stages"`
+	RetryPolicy        RetryPolicy              `yaml:"retry_policy"`
+	BoundaryValidation BoundaryValidationConfig `yaml:"boundary_validation"`
+}
+
+// BoundaryValidationConfig carries the frozen protocol's boundary-validator
+// settings. Putting waivers here rather than in the validator's own source
+// is the point: a cohort's decision to allow a specific path is part of
+// that cohort's protocol, is hashed into the run's protocol fingerprint,
+// and is visible to anyone auditing the result.
+type BoundaryValidationConfig struct {
+	// WaivedOracleShapedPaths lists bundle-relative paths where the
+	// oracle-name heuristic is knowingly overridden - for a real
+	// repository that legitimately contains, say,
+	// reviewer/repository/db/oracle_dialect.go.
+	//
+	// Only that one lexical rule is waivable. Structural violations
+	// (symlinks, git metadata, checksum mismatches) are never waivable at
+	// any level of configuration.
+	WaivedOracleShapedPaths []string `yaml:"waived_oracle_shaped_paths"`
 }
 
 type HandoffConfig struct {

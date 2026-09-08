@@ -74,6 +74,27 @@ type Report struct {
 	Result        string      `json:"result"`
 	Checks        []Check     `json:"checks"`
 	Violations    []Violation `json:"violations,omitempty"`
+
+	// Waivers records violations that were knowingly overridden by
+	// protocol configuration. They are reported, never silently dropped:
+	// the difference between "this cohort knowingly allowed
+	// oracle_dialect.go" and "someone turned the check off" has to be
+	// visible in the run's own artifacts.
+	Waivers []Violation `json:"waivers,omitempty"`
+}
+
+// Config carries protocol-supplied validator settings.
+type Config struct {
+	// WaivedOracleShapedPaths are bundle-relative paths where the
+	// oracle-name heuristic is knowingly overridden.
+	//
+	// Only oracle_shaped_content is waivable, and deliberately so: it is
+	// the one rule built on a lexical guess about English words, so it is
+	// the only one that can be wrong about a clean bundle. Every other
+	// rule - symlinks, git metadata, checksum mismatches, forbidden
+	// metadata fields - is structural and unambiguous, and a waiver
+	// mechanism over those would just be a hole in the boundary.
+	WaivedOracleShapedPaths []string
 }
 
 // Passed reports whether the bundle is admissible.
@@ -152,6 +173,10 @@ var gitMetadataNames = map[string]bool{
 // oracleShapedSubstrings are path fragments that suggest retrospective or
 // outcome material. Matching is on the lowercased path, so "Expected.md",
 // "ORACLE/", and "ground_truth.json" all trip it.
+//
+// These apply only to miner-authored surfaces: entries directly under
+// reviewer/, and metadata values. They are deliberately NOT applied inside
+// reviewer/repository/ - see checkOracleShapedPath below.
 var oracleShapedSubstrings = []string{
 	"oracle",
 	"ground_truth",
@@ -169,6 +194,46 @@ var oracleShapedSubstrings = []string{
 	"review_comments",
 	"ci_result",
 	"verdict",
+}
+
+// The vocabulary problem: inside reviewer/repository/ the files are
+// third-party upstream source, whose words this project does not control.
+// "oracle" there means Oracle Database, "solution" means a .sln file or a
+// solver, "verdict" means a TestNG result, "ground_truth" means training
+// labels. Applying the substring list there rejects ordinary repositories
+// wholesale - and a check that fires constantly on clean input gets turned
+// off, which is worse than a narrower check that people trust.
+//
+// So inside the snapshot, two much tighter signals are used instead.
+
+// oracleArtifactBasenames are exact filenames an oracle bundle's own
+// artifacts would carry. An exact basename stays high-signal even in a
+// source tree: real projects have oracle_dialect.go and OracleConnection
+// .java, not a bare oracle.json.
+var oracleArtifactBasenames = map[string]bool{
+	"oracle.json":            true,
+	"oracle.yaml":            true,
+	"oracle.yml":             true,
+	"ground_truth.json":      true,
+	"groundtruth.json":       true,
+	"answer_key.json":        true,
+	"answerkey.json":         true,
+	"expected_findings.json": true,
+	"expected-findings.json": true,
+	"retrospective.json":     true,
+}
+
+// highSignalOracleSubstrings are the few fragments specific enough to this
+// benchmark's vocabulary that they are worth matching even inside
+// third-party source. Everything ambiguous in ordinary code is excluded on
+// purpose: "ground_truth" is omitted here despite being omitted-from-safe,
+// because legitimate ML repositories use it constantly.
+var highSignalOracleSubstrings = []string{
+	"expected_finding",
+	"expected-finding",
+	"answer_key",
+	"answerkey",
+	"fix_commit",
 }
 
 // forbiddenMetadataValueSubstrings catch outcome information smuggled into
@@ -191,6 +256,16 @@ const (
 // contaminated-but-readable bundle is a report with Result "fail", not an
 // error.
 func Validate(caseID, bundleRoot string) (Report, error) {
+	return ValidateWithConfig(caseID, bundleRoot, Config{})
+}
+
+// ValidateWithConfig is Validate with protocol-supplied settings.
+func ValidateWithConfig(caseID, bundleRoot string, cfg Config) (Report, error) {
+	waived := make(map[string]bool, len(cfg.WaivedOracleShapedPaths))
+	for _, p := range cfg.WaivedOracleShapedPaths {
+		waived[filepath.ToSlash(p)] = true
+	}
+
 	report := Report{
 		SchemaVersion: "boundary-validation/v1",
 		CaseID:        caseID,
@@ -233,6 +308,21 @@ func Validate(caseID, bundleRoot string) (Report, error) {
 			return violations[i].Detail < violations[j].Detail
 		})
 		byRule[rule] = violations
+
+		// Waivers apply only to the lexical rule, and only to exactly the
+		// paths the protocol named.
+		if rule == RuleOracleShaped && len(waived) > 0 {
+			kept := violations[:0:0]
+			for _, v := range violations {
+				if waived[v.Path] {
+					report.Waivers = append(report.Waivers, v)
+					continue
+				}
+				kept = append(kept, v)
+			}
+			violations = kept
+			byRule[rule] = violations
+		}
 
 		result := "pass"
 		if len(violations) > 0 {
@@ -302,16 +392,45 @@ func checkReviewerTree(reviewerRoot string, add func(rule, path, detail string))
 				fmt.Sprintf("%q indicates git history, alternates, submodule or worktree leakage; the snapshot format is a plain directory tree", d.Name()))
 		}
 
-		lower := strings.ToLower(rel)
-		for _, frag := range oracleShapedSubstrings {
-			if strings.Contains(lower, frag) {
-				add(RuleOracleShaped, rel,
-					fmt.Sprintf("path contains %q, which suggests retrospective or outcome material", frag))
-				break
-			}
-		}
+		checkOracleShapedPath(rel, d.Name(), add)
 		return nil
 	})
+}
+
+// snapshotPrefix is the region whose vocabulary this project does not
+// control.
+const snapshotPrefix = "reviewer/repository/"
+
+// checkOracleShapedPath applies the oracle-name heuristic with the strength
+// appropriate to where the file sits: strict on miner-authored paths, and
+// narrow inside the third-party source snapshot.
+func checkOracleShapedPath(rel, basename string, add func(rule, path, detail string)) {
+	lower := strings.ToLower(rel)
+	lowerBase := strings.ToLower(basename)
+
+	if strings.HasPrefix(lower, snapshotPrefix) {
+		if oracleArtifactBasenames[lowerBase] {
+			add(RuleOracleShaped, rel,
+				fmt.Sprintf("%q is the filename of an oracle-bundle artifact; a source snapshot must not contain one", basename))
+			return
+		}
+		for _, frag := range highSignalOracleSubstrings {
+			if strings.Contains(lower, frag) {
+				add(RuleOracleShaped, rel,
+					fmt.Sprintf("path contains %q, which is specific enough to this benchmark's vocabulary to be suspicious even in third-party source", frag))
+				return
+			}
+		}
+		return
+	}
+
+	for _, frag := range oracleShapedSubstrings {
+		if strings.Contains(lower, frag) {
+			add(RuleOracleShaped, rel,
+				fmt.Sprintf("path contains %q, which suggests retrospective or outcome material", frag))
+			return
+		}
+	}
 }
 
 func checkMetadata(metadataPath string, add func(rule, path, detail string)) {

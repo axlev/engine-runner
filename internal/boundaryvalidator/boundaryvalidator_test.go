@@ -1,10 +1,14 @@
 package boundaryvalidator
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v5"
@@ -324,5 +328,147 @@ func TestOutcomeCarryingFieldsAreStillRejected(t *testing.T) {
 				t.Errorf("field %q must still be rejected, got: %s", field, r.Summary())
 			}
 		})
+	}
+}
+
+// TestThirdPartySourceVocabularyIsNotAFalsePositive is the regression test
+// for the demonstrated false positive: a clean snapshot containing Oracle
+// *the database* (or a .sln, or a solver) must not invalidate the case.
+// The words in reviewer/repository/ belong to the upstream project, not to
+// this benchmark's vocabulary.
+func TestThirdPartySourceVocabularyIsNotAFalsePositive(t *testing.T) {
+	for _, name := range []string{
+		"oracle_dialect.go",
+		"OracleConnection.java",
+		"solution_builder.go",
+		"verdict_reporter.go",
+		"ground_truth_labels.py",
+		"final_state_machine.go",
+	} {
+		t.Run(name, func(t *testing.T) {
+			bundle := copyBundle(t)
+			target := filepath.Join(bundle, "reviewer", "repository", name)
+			if err := os.WriteFile(target, []byte("package db\n"), 0o644); err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+			rehashBundle(t, bundle)
+
+			r := validate(t, bundle)
+			if hasViolation(r, RuleOracleShaped) {
+				t.Errorf("%s is ordinary third-party source and must not trip the oracle heuristic: %s", name, r.Summary())
+			}
+		})
+	}
+}
+
+// TestOracleArtifactFilenamesStillCaughtInsideSnapshot is the other half:
+// narrowing the check must not have lost the accident it exists for. An
+// oracle bundle's own artifact, dropped into the snapshot, is still caught
+// by exact basename.
+func TestOracleArtifactFilenamesStillCaughtInsideSnapshot(t *testing.T) {
+	for _, name := range []string{"oracle.json", "ground_truth.json", "expected_findings.json", "retrospective.json"} {
+		t.Run(name, func(t *testing.T) {
+			bundle := copyBundle(t)
+			if err := os.WriteFile(filepath.Join(bundle, "reviewer", "repository", name), []byte("{}"), 0o644); err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+			rehashBundle(t, bundle)
+
+			r := validate(t, bundle)
+			if !hasViolation(r, RuleOracleShaped) {
+				t.Errorf("%s inside the snapshot must still be caught: %s", name, r.Summary())
+			}
+		})
+	}
+}
+
+// TestMinerAuthoredPathsKeepTheStrictList: outside the snapshot the full
+// substring list still applies, because those paths are miner-authored and
+// this project does control that vocabulary.
+func TestMinerAuthoredPathsKeepTheStrictList(t *testing.T) {
+	bundle := copyBundle(t)
+	if err := os.WriteFile(filepath.Join(bundle, "reviewer", "oracle-notes.md"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	r := validate(t, bundle)
+	if !hasViolation(r, RuleOracleShaped) {
+		t.Errorf("an oracle-shaped name directly under reviewer/ must still be caught: %s", r.Summary())
+	}
+}
+
+func TestWaiverSuppressesViolationButRecordsIt(t *testing.T) {
+	bundle := copyBundle(t)
+	rel := "reviewer/oracle-notes.md"
+	if err := os.WriteFile(filepath.Join(bundle, "reviewer", "oracle-notes.md"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	r, err := ValidateWithConfig("test-case", bundle, Config{WaivedOracleShapedPaths: []string{rel}})
+	if err != nil {
+		t.Fatalf("ValidateWithConfig: %v", err)
+	}
+	if hasViolation(r, RuleOracleShaped) {
+		t.Errorf("waived path should not remain a violation: %s", r.Summary())
+	}
+	if len(r.Waivers) != 1 || r.Waivers[0].Path != rel {
+		t.Fatalf("waiver must be recorded, got %+v", r.Waivers)
+	}
+}
+
+// TestWaiversCannotSuppressStructuralRules is the important negative: the
+// waiver mechanism is a relief valve for one lexical heuristic, not a
+// general override. A checksum mismatch stays fatal no matter what the
+// protocol lists.
+func TestWaiversCannotSuppressStructuralRules(t *testing.T) {
+	bundle := copyBundle(t)
+	target := filepath.Join(bundle, "reviewer", "diff.patch")
+	if err := os.WriteFile(target, []byte("tampered\n"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	r, err := ValidateWithConfig("test-case", bundle, Config{
+		WaivedOracleShapedPaths: []string{"reviewer/diff.patch"},
+	})
+	if err != nil {
+		t.Fatalf("ValidateWithConfig: %v", err)
+	}
+	if !hasViolation(r, RuleChecksumManifest) {
+		t.Errorf("a checksum mismatch must not be waivable, got: %s", r.Summary())
+	}
+	if r.Passed() {
+		t.Errorf("bundle with a tampered file must still fail")
+	}
+}
+
+// rehashBundle regenerates control/checksums.sha256 so a test that adds a
+// legitimate source file isolates the rule under test instead of also
+// tripping the checksum manifest.
+func rehashBundle(t *testing.T, bundle string) {
+	t.Helper()
+	var lines []string
+	reviewerRoot := filepath.Join(bundle, "reviewer")
+	err := filepath.WalkDir(reviewerRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(bundle, path)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(data)
+		lines = append(lines, hex.EncodeToString(sum[:])+"  "+filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("rehashing: %v", err)
+	}
+	sort.Strings(lines)
+	out := strings.Join(lines, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(bundle, "control", "checksums.sha256"), []byte(out), 0o644); err != nil {
+		t.Fatalf("rehashing: %v", err)
 	}
 }
