@@ -6,6 +6,23 @@ adapter: claude
 model: claude-opus-5
 reasoning_level: high
 
+# How each bound is actually enforced (verified against `claude --help` and
+# `codex exec --help` - neither CLI has a timeout or token flag):
+#
+#   max_wall_clock_seconds  PREVENTION. The orchestrator wraps each attempt
+#                           in a context deadline. Works on every adapter.
+#   max_cost_usd            PREVENTION on claude (--max-budget-usd).
+#                           `codex exec` has no budget flag, so a codex stage
+#                           cannot be cost-bounded before the fact - only
+#                           detected after, and only if it reports usage.
+#   max_input_tokens        DETECTION only. No flag on either CLI, so these
+#   max_output_tokens       are checked against the usage a stage reports and
+#   max_tool_calls          fail it if exceeded. The spend has already
+#                           happened; the check keeps the declared limit
+#                           meaningful rather than reporting an over-budget
+#                           run clean. An adapter that reports no usage
+#                           (codex today) makes these uncheckable, and the
+#                           run warns rather than passing silently.
 budget:
   # Falsification is targeted rather than exploratory: it enters specific
   # mechanisms named by review-b rather than surveying the change.

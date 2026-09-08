@@ -95,6 +95,18 @@ type Orchestrator struct {
 	Builder   *contextbuilder.Builder
 	Runner    *runner.Runner
 	Validator *SchemaValidator
+
+	// Warn receives non-fatal diagnostics, such as a budget bound that
+	// could not be checked because the adapter reported no usage. Nil
+	// discards them.
+	Warn func(string)
+}
+
+func (o *Orchestrator) warnf(format string, args ...interface{}) {
+	if o.Warn == nil {
+		return
+	}
+	o.Warn(fmt.Sprintf(format, args...))
 }
 
 // Options are the inputs to New. It is a struct rather than a parameter
@@ -109,6 +121,7 @@ type Options struct {
 	AgentSet      AgentSet
 	Adapters      map[string]adapters.AgentAdapter
 	WorkspaceRoot string
+	Warn          func(string)
 }
 
 // New wires an Orchestrator. workspaceRoot is where the Runner creates fresh
@@ -137,6 +150,7 @@ func New(opts Options) (*Orchestrator, error) {
 		Builder:      contextbuilder.New(),
 		Runner:       r,
 		Validator:    NewSchemaValidator(opts.RepoRoot),
+		Warn:         opts.Warn,
 	}, nil
 }
 
@@ -275,7 +289,21 @@ func (o *Orchestrator) runStageWithRetries(
 			},
 		}
 
-		result, runErr := adapter.Run(ctx, req)
+		// max_wall_clock_seconds is enforced here, not by the vendor:
+		// neither CLI has a timeout flag. The deadline is per ATTEMPT, not
+		// per stage - a retry gets its own full allowance, since the bound
+		// describes one invocation.
+		attemptCtx := ctx
+		cancel := context.CancelFunc(func() {})
+		if secs := agentCfg.Budget.MaxWallClockSeconds; secs > 0 {
+			attemptCtx, cancel = context.WithTimeout(ctx, time.Duration(secs)*time.Second)
+		}
+
+		result, runErr := adapter.Run(attemptCtx, req)
+		// Released immediately rather than deferred: the deadline covers
+		// exactly the adapter call, and a deferred cancel inside this loop
+		// would hold one timer per attempt until the whole stage returns.
+		cancel()
 		result.Attempt = attempt
 		if result.Adapter == "" {
 			result.Adapter = adapter.Name()
@@ -288,6 +316,23 @@ func (o *Orchestrator) runStageWithRetries(
 			records = append(records, record)
 			lastErr = fmt.Errorf("stage %s attempt %d: adapter run failed: %w", stage, attempt, runErr)
 			continue
+		}
+
+		// Detection, not prevention: max_input_tokens, max_output_tokens and
+		// max_tool_calls have no flag on either vendor CLI, so the declared
+		// bound can only be checked against what the stage reports having
+		// used. The spend already happened; failing here keeps the protocol's
+		// limits meaningful rather than reporting an over-budget run clean.
+		if budgetErr, unavailable := checkUsageAgainstBudget(result.Adapter, agentCfg.Budget, result.Usage); budgetErr != nil {
+			record.Err = budgetErr.Error()
+			records = append(records, record)
+			lastErr = fmt.Errorf("stage %s attempt %d: %w", stage, attempt, budgetErr)
+			continue
+		} else if unavailable != nil {
+			// Not a failure - but it must not pass silently either, or a
+			// bound enforced on one vendor looks enforced on all of them.
+			o.warnf("stage %s attempt %d: adapter %q reported no usage, so %v could not be checked",
+				stage, attempt, unavailable.Adapter, unavailable.Bounds)
 		}
 
 		// The reasoner authors content; the engine supplies identity. This

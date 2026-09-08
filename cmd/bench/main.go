@@ -138,6 +138,10 @@ func run(args []string, stdout io.Writer) error {
 		AgentSet:      agentSet,
 		Adapters:      built,
 		WorkspaceRoot: cfg.workspaceRoot,
+		// Budget bounds that could not be checked (an adapter reporting no
+		// usage) surface here rather than passing silently - a limit
+		// enforced on one vendor and skipped on another must be visible.
+		Warn: func(msg string) { fmt.Fprintln(os.Stderr, "bench: warning:", msg) },
 	})
 	if err != nil {
 		return fmt.Errorf("constructing orchestrator: %w", err)

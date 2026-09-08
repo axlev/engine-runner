@@ -134,4 +134,11 @@ Known gaps, deliberately left open:
 - `configs/agents/` names the claude adapter but is not runnable: no adapter
   container image has been built. `fixtures/agents/` is the smoke-test
   binding and works today.
+- Budget bounds are only partly preventable, because neither vendor CLI has
+  a timeout or token flag. `max_wall_clock_seconds` is enforced by the
+  orchestrator and `max_cost_usd` by claude alone; the token and tool-call
+  bounds are checked after the fact against reported usage. `codex exec`
+  has no budget flag at all and the codex adapter reports no usage, so a
+  codex stage is currently unbounded except on wall clock - a run warns
+  when a declared bound could not be checked.
 

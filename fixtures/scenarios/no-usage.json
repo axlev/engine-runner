@@ -1,0 +1,15 @@
+{
+  "name": "no-usage",
+  "description": "All three stages succeed but report no usage at all, as the codex adapter does today (its --json event schema was never verified, so Usage is left zero rather than invented). Exercises the case where a declared budget bound cannot be checked after the fact.",
+  "stages": {
+    "reasoner-1": {
+      "default": { "kind": "success", "response_path": "responses/happy-path/reasoner-1.json" }
+    },
+    "reasoner-2": {
+      "default": { "kind": "success", "response_path": "responses/happy-path/reasoner-2.json" }
+    },
+    "reasoner-3": {
+      "default": { "kind": "success", "response_path": "responses/happy-path/reasoner-3.json" }
+    }
+  }
+}
