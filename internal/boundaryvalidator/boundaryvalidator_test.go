@@ -282,3 +282,47 @@ func TestReportSatisfiesItsSchema(t *testing.T) {
 		})
 	}
 }
+
+// TestCutoffProvableMetadataFieldsAreAdmissible pins the widening made
+// after reading the miner's own reviewer-metadata schema: base_branch and
+// commit_messages are things a reviewer at the cutoff could genuinely see,
+// and the miner emits them only when their as-of-cutoff value is provable.
+// Rejecting them would make the benchmark measure a harder task than the
+// real one.
+func TestCutoffProvableMetadataFieldsAreAdmissible(t *testing.T) {
+	bundle := copyBundle(t)
+	writeMetadata(t, bundle, map[string]any{
+		"schema_version":   "reviewer-metadata/v1",
+		"repository":       "example/widget-service",
+		"title":            "Add pagination",
+		"description":      "Introduces cursor-based pagination.",
+		"cutoff_timestamp": "2026-01-01T00:00:00Z",
+		"base_branch":      "main",
+		"commit_messages":  []string{"add paginate helper", "wire into list endpoint"},
+	})
+	r := validate(t, bundle)
+	if hasViolation(r, RuleMetadataFields) {
+		t.Errorf("base_branch/commit_messages must be admissible, got: %s", r.Summary())
+	}
+}
+
+// TestOutcomeCarryingFieldsAreStillRejected guards the widening above from
+// having quietly opened the door: the fields that actually carry outcome
+// information must still be refused.
+func TestOutcomeCarryingFieldsAreStillRejected(t *testing.T) {
+	for _, field := range []string{"merged", "state", "merged_at", "fix_commit", "closed_at"} {
+		t.Run(field, func(t *testing.T) {
+			bundle := copyBundle(t)
+			writeMetadata(t, bundle, map[string]any{
+				"schema_version":   "reviewer-metadata/v1",
+				"repository":       "example/widget-service",
+				"cutoff_timestamp": "2026-01-01T00:00:00Z",
+				field:              "whatever",
+			})
+			r := validate(t, bundle)
+			if !hasViolation(r, RuleMetadataFields) {
+				t.Errorf("field %q must still be rejected, got: %s", field, r.Summary())
+			}
+		})
+	}
+}

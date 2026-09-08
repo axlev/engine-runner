@@ -96,8 +96,14 @@ Known gaps, deliberately left open:
   and gates every run, but it has only ever been exercised against
   synthetic bundles and deliberately contaminated copies of them — a real
   miner export will likely surface rules that need tightening or relaxing.
-- `miner/docs/export-contract.md` is not frozen; that lives in the miner
-  repository, which this role does not work in.
+- The miner currently exports `miner/prospective-case/v1` — a flat root
+  with a patch-and-SHA source model — which this engine cannot ingest. The
+  decision was that the miner adapts to the engine;
+  [`docs/prospective-bundle-contract.md`](docs/prospective-bundle-contract.md)
+  is the normative target it must hit, and the migration delta is listed
+  there. Making those miner changes is a `coder-miner` job, not this
+  role's: the same context that holds the validator's heuristics should
+  not also write the export they judge, or it will teach to the test.
 - `configs/agents/*.yaml` from the documented layout is not created; its
   contract isn't specified and isn't load-bearing for the current
   milestones.

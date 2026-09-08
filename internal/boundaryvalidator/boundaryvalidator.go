@@ -107,14 +107,26 @@ var allowedReviewerEntries = map[string]bool{
 }
 
 // allowedMetadataFields are the only reviewer-visible metadata fields
-// section 7 permits. A field outside this set can carry outcome information
+// permitted. A field outside this set can carry outcome information
 // (state, merged_at, fix_commit, ...) even when it looks innocuous.
+//
+// This is a superset of section 7's example, which is labelled
+// "recommended" rather than normative. base_branch and commit_messages
+// were added after reading the miner's own reviewer-metadata schema: both
+// are things a reviewer at the cutoff could genuinely see, and the miner
+// emits them only when their as-of-cutoff value is positively provable
+// (unchanged since cutoff, or reconstructed from a complete history).
+// Admissibility is the test here, not brevity - excluding a field a
+// reviewer legitimately had makes the benchmark measure a harder task
+// than the real one.
 var allowedMetadataFields = map[string]bool{
 	"schema_version":   true,
 	"repository":       true,
 	"title":            true,
 	"description":      true,
 	"cutoff_timestamp": true,
+	"base_branch":      true,
+	"commit_messages":  true,
 }
 
 // gitMetadataNames are filesystem names that indicate git history,
