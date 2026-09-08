@@ -100,7 +100,17 @@ type RunResult struct {
 	Usage      Usage     `json:"usage"`
 	Adapter    string    `json:"adapter"`
 	Version    string    `json:"version"`
-	Attempt    int       `json:"attempt"`
+
+	// AuthMode records WHICH KIND of credential produced this result, never
+	// the credential itself. It matters because the kind changes the
+	// invocation, not just the billing: an api_key run gets claude's --bare
+	// (no hooks, no LSP, no CLAUDE.md discovery), while an oauth_token run
+	// cannot use --bare and runs with the CLI's normal defaults active. A
+	// result produced under oauth_token is therefore not comparable with a
+	// bare one, and that has to be visible in the artifact rather than
+	// remembered. Empty for adapters with no credential concept.
+	AuthMode string `json:"auth_mode,omitempty"`
+	Attempt  int    `json:"attempt"`
 }
 
 // AgentAdapter provides vendor polymorphism without creating a generic

@@ -120,6 +120,8 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 		FinishedAt: finished,
 		Adapter:    a.Name(),
 		ExitCode:   result.ExitCode,
+		// Kind only - Credentials.Value is never recorded anywhere.
+		AuthMode: string(a.Credentials.Kind),
 		// Usage is deliberately left zero: extracting token counts/cost
 		// would require parsing --json's JSONL event stream, and this
 		// session could not verify that schema without either an

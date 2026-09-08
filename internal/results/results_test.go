@@ -380,3 +380,58 @@ func TestPromptIsPreservedForAFailedStage(t *testing.T) {
 		t.Errorf("a failed stage must still preserve its prompt: %v", err)
 	}
 }
+
+// TestAuthModeValidatesForEveryVendorValue guards a trap in adding an
+// enum-constrained optional field to a strict (additionalProperties:false)
+// object: the field is populated by two adapters that use DIFFERENT value
+// sets. claude reports api_key/oauth_token, codex api_key/access_token. An
+// enum covering only claude's pair would have made every codex run fail
+// validation at seal time - after the money was spent.
+func TestAuthModeValidatesForEveryVendorValue(t *testing.T) {
+	schema, err := jsonschema.Compile(filepath.Join(repoRoot, "schemas/run-result.schema.json"))
+	if err != nil {
+		t.Fatalf("compiling schema: %v", err)
+	}
+
+	stageRow := func(authMode interface{}) map[string]interface{} {
+		row := map[string]interface{}{
+			"stage": "reasoner-1", "adapter": "claude",
+			"attempts": 1, "final_exit_code": 0,
+			"usage": map[string]interface{}{},
+		}
+		if authMode != nil {
+			row["auth_mode"] = authMode
+		}
+		return row
+	}
+	doc := func(authMode interface{}) interface{} {
+		return map[string]interface{}{
+			"schema_version": "run-result/v1",
+			"run_id":         "r", "case_id": "c",
+			"protocol_version": "pilot-v1",
+			"created_at":       "2026-01-01T00:00:00Z",
+			"sealed_at":        "2026-01-01T00:00:00Z",
+			"status":           "completed",
+			"fingerprints": map[string]interface{}{
+				"protocol_hash":    "sha256:0",
+				"schema_versions":  map[string]interface{}{},
+				"prompt_hashes":    map[string]interface{}{},
+				"adapter_versions": map[string]interface{}{},
+				"input_checksums":  map[string]interface{}{},
+			},
+			"stages": []interface{}{stageRow(authMode)},
+		}
+	}
+
+	// Every value an adapter can actually emit, plus absence.
+	for _, valid := range []interface{}{"api_key", "oauth_token", "access_token", nil} {
+		if err := schema.Validate(doc(valid)); err != nil {
+			t.Errorf("auth_mode=%v must validate as run-result/v1: %v", valid, err)
+		}
+	}
+
+	// A typo must not slip through as free-text provenance.
+	if err := schema.Validate(doc("subscription")); err == nil {
+		t.Errorf("auth_mode=%q should be rejected; the enum is what makes the field trustworthy", "subscription")
+	}
+}

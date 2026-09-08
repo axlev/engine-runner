@@ -127,6 +127,8 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 		FinishedAt: finished,
 		Adapter:    a.Name(),
 		ExitCode:   result.ExitCode,
+		// Kind only - Credentials.Value is never recorded anywhere.
+		AuthMode: string(a.Credentials.Kind),
 	}
 
 	if runErr != nil && len(result.Stdout) == 0 {

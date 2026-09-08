@@ -96,6 +96,7 @@ type stageOutcomeDoc struct {
 	Stage          string         `json:"stage"`
 	Adapter        string         `json:"adapter"`
 	AdapterVersion string         `json:"adapter_version,omitempty"`
+	AuthMode       string         `json:"auth_mode,omitempty"`
 	Attempts       int            `json:"attempts"`
 	FinalExitCode  int            `json:"final_exit_code"`
 	StartedAt      string         `json:"started_at,omitempty"`
@@ -163,6 +164,7 @@ func (w *Writer) writeStages(stagesDir, runDir string, attempts []orchestrator.S
 			Stage:          string(stage),
 			Adapter:        last.Result.Adapter,
 			AdapterVersion: last.Result.Version,
+			AuthMode:       last.Result.AuthMode,
 			Attempts:       len(recs),
 			FinalExitCode:  last.Result.ExitCode,
 			StartedAt:      formatTime(last.Result.StartedAt),

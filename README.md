@@ -104,6 +104,15 @@ environment (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`;
 `OPENAI_API_KEY` or `CODEX_ACCESS_TOKEN`) plus a container image via
 `-adapter-image`.
 
+**Which credential kind you use changes the run, not just the billing.**
+With `ANTHROPIC_API_KEY` the claude adapter passes `--bare`, so the stage
+runs with no hooks, no LSP and no `CLAUDE.md` discovery. `CLAUDE_CODE_OAUTH_TOKEN`
+cannot use `--bare` and runs with the CLI's normal defaults active — which
+means a `CLAUDE.md` inside a mined repository could influence a reviewer
+outside the frozen protocol. Each stage records which kind produced it as
+`auth_mode` in `run.json`, so results are self-describing; treat the two as
+non-comparable rather than assuming.
+
 ## Layout
 
 ```

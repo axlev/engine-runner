@@ -169,6 +169,15 @@
         "adapter_version": {
           "type": "string"
         },
+        "auth_mode": {
+          "type": "string",
+          "enum": [
+            "api_key",
+            "oauth_token",
+            "access_token"
+          ],
+          "description": "Which kind of credential produced this stage, never the credential itself. The kind changes the invocation, not just the billing: a claude api_key run uses --bare (no hooks, no LSP, no CLAUDE.md discovery), while oauth_token cannot use --bare and runs with the CLI's normal defaults active, so the two are not directly comparable. Values are per-vendor: claude reports api_key or oauth_token, codex api_key or access_token. Optional: adapters with no credential concept (fixture) omit it, and results written before this field existed remain valid run-result/v1."
+        },
         "attempts": {
           "type": "integer",
           "minimum": 1
