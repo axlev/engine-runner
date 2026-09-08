@@ -209,3 +209,31 @@ func TestSymlinkInBundleIsRejected(t *testing.T) {
 		t.Fatalf("expected Prepare to refuse a bundle containing a symlink")
 	}
 }
+
+// TestPrepareCreatesAContainerWritableOutputDir pins a fix that cost a paid
+// model call. Nothing in this package writes to output/, so it looked like
+// the adapter's business - but if it does not exist when the container
+// starts, docker creates the bind-mount source as root:root 0755 and the
+// stage fails with "permission denied" only AFTER the vendor call has
+// completed and been billed.
+func TestPrepareCreatesAContainerWritableOutputDir(t *testing.T) {
+	b := New()
+	ws := t.TempDir()
+
+	if _, err := b.Prepare(adapters.StageReasoner1, bundleRoot, promptPath, ws, HandoffPolicy{}, StageInputs{}); err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+
+	info, err := os.Stat(filepath.Join(ws, "output"))
+	if err != nil {
+		t.Fatalf("output dir must exist before the container starts, or docker creates it as root: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("output is not a directory")
+	}
+	// The container's uid belongs to the image, not the host, so "writable
+	// by the host user" is not enough - it must be writable by any uid.
+	if perm := info.Mode().Perm(); perm&0o002 == 0 {
+		t.Errorf("output dir mode = %04o, want world-writable: the stage runs as uid 10001, unrelated to the host uid that created this", perm)
+	}
+}

@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/axlev/engine-runner/internal/adapters"
@@ -173,7 +175,23 @@ func run(args []string, stdout io.Writer) error {
 		return fmt.Errorf("constructing orchestrator: %w", err)
 	}
 
-	outcome, runErr := o.Run(context.Background(), cfg.runID, cfg.caseID, cfg.bundleRoot)
+	// Ctrl+C must cancel the run, not kill the process. Without this, an
+	// interrupt terminated bench while the vendor container kept running
+	// and kept billing - it had to be killed by hand - and every attempt
+	// already completed died with the process instead of being sealed.
+	//
+	// Cancellation propagates: the orchestrator stops retrying, the runner
+	// docker-kills the live container, and the seal below still writes a
+	// result recording exactly how far the run got. A second interrupt
+	// bypasses all of that via the default handler, so a wedged run can
+	// still be killed outright.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	outcome, runErr := o.Run(ctx, cfg.runID, cfg.caseID, cfg.bundleRoot)
+	if ctx.Err() != nil {
+		fmt.Fprintln(os.Stderr, "bench: interrupted; sealing what completed so far")
+	}
 
 	w, err := results.NewWriter(cfg.resultsRoot)
 	if err != nil {

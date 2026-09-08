@@ -315,6 +315,16 @@ func (o *Orchestrator) runStageWithRetries(
 			record.Err = runErr.Error()
 			records = append(records, record)
 			lastErr = fmt.Errorf("stage %s attempt %d: adapter run failed: %w", stage, attempt, runErr)
+
+			// A cancelled PARENT context means the operator interrupted the
+			// run, so retrying would open a new vendor call - and new spend -
+			// under a context that is already dead. Checked on ctx rather
+			// than attemptCtx precisely to keep it distinct from an attempt
+			// exhausting its own wall-clock budget, which SHOULD retry: the
+			// retry policy deliberately gives each attempt a fresh allowance.
+			if ctx.Err() != nil {
+				return "", records, lastErr
+			}
 			continue
 		}
 

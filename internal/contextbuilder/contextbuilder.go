@@ -94,6 +94,29 @@ func (b *Builder) Prepare(stage adapters.Stage, bundleRoot, promptPath, workDir 
 		return StageContext{}, fmt.Errorf("contextbuilder: creating input dir: %w", err)
 	}
 
+	// output/ must be created HERE, even though nothing in this package
+	// writes to it. If it does not exist when the container starts, docker
+	// creates the bind-mount source itself as root:root 0755 - and the
+	// stage runs as a non-root user (uid 10001 in our images), so writing
+	// the result fails with "permission denied" AFTER the model call has
+	// completed and been paid for. That is the most expensive possible
+	// place to discover a missing directory.
+	//
+	// 0777 is deliberate and set with an explicit Chmod, because MkdirAll
+	// masks its mode with the process umask (typically 022, yielding 0755
+	// and reproducing the bug). The container's uid is a property of the
+	// image, not of the host, so there is no uid to chown to without root.
+	// The exposure is bounded: this is per-attempt scratch under the
+	// operator's own cache root, it holds no credentials, and the run
+	// result is copied out and checksummed before anything is read back.
+	outputDir := filepath.Join(workDir, "output")
+	if err := os.MkdirAll(outputDir, 0o777); err != nil {
+		return StageContext{}, fmt.Errorf("contextbuilder: creating output dir: %w", err)
+	}
+	if err := os.Chmod(outputDir, 0o777); err != nil {
+		return StageContext{}, fmt.Errorf("contextbuilder: making output dir container-writable: %w", err)
+	}
+
 	var placed []string
 
 	reviewerSrcRoot := filepath.Join(bundleRoot, "reviewer")

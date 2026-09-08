@@ -140,11 +140,12 @@ Known gaps, deliberately left open:
   `engine-runner/adapter-claude:2.1.263` was built and smoke-tested on
   2026-09-08 and prints its version as non-root `reasoner`. The codex image
   has not been built.
-- Container execution is still unit-tested only at the argument-construction
-  level. No stage has run through an image, so `internal/runner`'s read-only
-  input mount, output mount, network policy, resource limits and credential
-  injection are unexercised. The image smoke test runs the baked `CMD`, not
-  a stage.
+- A live stage HAS now run: on 2026-09-08 reasoner-1 completed a real
+  64-second claude call through the container, with mounts, network egress
+  and credential injection all working. It then failed writing its result
+  (the output-dir ownership bug, since fixed), and the run was interrupted
+  before reaching reasoner-2. So: one stage proven end to end, no complete
+  three-stage run yet, and resource limits still unexercised.
 - `configs/agents/` is therefore closer to runnable than it was, but no live
   vendor run has happened. `fixtures/agents/` remains the smoke-test binding
   and needs no daemon.

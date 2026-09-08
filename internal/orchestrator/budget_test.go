@@ -189,3 +189,45 @@ func TestUnavailableUsageWarnsRatherThanPassingSilently(t *testing.T) {
 		t.Errorf("warning = %q, want it to name the unchecked bound", warnings[0])
 	}
 }
+
+// TestCancelledRunDoesNotRetry pins the money-losing half of the interrupt
+// bug. The retry loop treated every adapter error alike, so once Ctrl+C
+// cancelled the run the stage opened ANOTHER vendor call under a context
+// that was already dead. An attempt that exhausts its own wall-clock budget
+// must still retry - a different condition, covered by
+// TestWallClockBudgetActuallyStopsAHangingStage above.
+func TestCancelledRunDoesNotRetry(t *testing.T) {
+	// No wall-clock bound, so cancellation is the only thing that can end
+	// this run: a second attempt would prove the bug rather than a timeout.
+	// The "timeout" scenario sleeps 30s, leaving room to cancel mid-flight.
+	agentsDir := agentSetWithBudget(t, "budget:\n  max_cost_usd: 1.0\n")
+	o := orchWithAgents(t, agentsDir, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		cancel()
+	}()
+
+	started := time.Now()
+	outcome, err := o.Run(ctx, "run-cancelled", "timeout", happyPathBundle)
+	elapsed := time.Since(started)
+
+	if err == nil {
+		t.Fatalf("expected the interrupted run to fail")
+	}
+	// Two attempts of a 30s scenario would take ~60s; one takes ~0.3s.
+	if elapsed > 20*time.Second {
+		t.Errorf("took %s, which means a second attempt ran after cancellation", elapsed)
+	}
+
+	attempts := 0
+	for _, rec := range outcome.Attempts {
+		if rec.Stage == adapters.StageReasoner1 {
+			attempts++
+		}
+	}
+	if attempts != 1 {
+		t.Errorf("reasoner-1 recorded %d attempts, want exactly 1: a cancelled run must not open another vendor call", attempts)
+	}
+}
