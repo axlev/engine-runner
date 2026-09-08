@@ -102,8 +102,11 @@ echo
 echo "build.sh: built $IMAGE"
 "${DOCKER[@]}" image inspect "$IMAGE" --format 'build.sh: image id {{.Id}}' 2>/dev/null || true
 echo
+# Reuse the same invocation the build needed, sudo included: printing a
+# bare "docker run" to someone whose socket needs sudo hands them a command
+# that fails on permission denied.
 echo "Smoke-test the image alone (should print the CLI version, as user reasoner):"
-echo "  docker run --rm $IMAGE"
+echo "  ${DOCKER[*]} run --rm $IMAGE"
 echo
 echo "Then one case through it (spends real money; needs a credential in the environment):"
 echo "  go run ./cmd/bench -agents configs/agents -adapter-image $IMAGE \\"

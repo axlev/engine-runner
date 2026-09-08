@@ -134,7 +134,10 @@ reachable.
 ## Status
 
 Milestone 1 (deterministic vertical slice) is complete, as is the adapter
-work of Milestone 2 and the boundary validator that opens Milestone 3. Known gaps are listed in [`AGENTS.md`](AGENTS.md) —
-notably that container execution has been unit-tested at the
-argument-construction level but never run live, and that no adapter
-container image has been built yet.
+work of Milestone 2 and the boundary validator that opens Milestone 3.
+
+The claude adapter image builds and runs (`docker/build.sh`). Known gaps
+are listed in [`AGENTS.md`](AGENTS.md) — notably that no stage has yet run
+*through* a container, so the runner's mounts, network policy and
+credential injection are still exercised only by unit tests, and no live
+vendor run has happened.

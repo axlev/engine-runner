@@ -128,12 +128,22 @@ Known gaps, deliberately left open:
   there. Making those miner changes is a `coder-miner` job, not this
   role's: the same context that holds the validator's heuristics should
   not also write the export they judge, or it will teach to the test.
-- Container execution is unit-tested at the argument-construction level but
-  has never been run live (no Docker daemon access in the development
-  sandbox, and no adapter container image has been built yet).
-- `configs/agents/` names the claude adapter but is not runnable: no adapter
-  container image has been built. `fixtures/agents/` is the smoke-test
-  binding and works today.
+- The claude adapter image exists and works:
+  `engine-runner/adapter-claude:2.1.263` was built and smoke-tested on
+  2026-09-08 and prints its version as non-root `reasoner`. The codex image
+  has not been built.
+- Container execution is still unit-tested only at the argument-construction
+  level. No stage has run through an image, so `internal/runner`'s read-only
+  input mount, output mount, network policy, resource limits and credential
+  injection are unexercised. The image smoke test runs the baked `CMD`, not
+  a stage.
+- `configs/agents/` is therefore closer to runnable than it was, but no live
+  vendor run has happened. `fixtures/agents/` remains the smoke-test binding
+  and needs no daemon.
+- `cmd/bench` shells out to `docker` as the calling user. Where the socket
+  requires `sudo`, a live run fails on permission denied regardless of the
+  image. `DockerRunner.DockerPath` is injectable but `bench` exposes no flag
+  for it.
 - Budget bounds are only partly preventable, because neither vendor CLI has
   a timeout or token flag. `max_wall_clock_seconds` is enforced by the
   orchestrator and `max_cost_usd` by claude alone; the token and tool-call

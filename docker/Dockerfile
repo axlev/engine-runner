@@ -22,10 +22,11 @@
 #
 # See docker/README.md for the equivalent by hand.
 #
-# NOTE: never built or run - there is no Docker daemon in the environment
-# this was written in. The vendor facts it encodes were verified (see
-# BASE_IMAGE below); the build itself has not been. Treat the first build
-# as the real test, including the ARG-in-COPY substitution.
+# Built and smoke-tested for claude on 2026-09-08 (2.1.263): all 16 steps
+# pass, the ARG-in-COPY substitution at step 7 resolves, and the image
+# prints its version as non-root reasoner. The codex build is still
+# unexercised - it is statically linked and reads CODEX_HOME, so it
+# exercises different parts of this file.
 
 # Default base is glibc-based, and that is a requirement rather than a
 # preference: `ldd` on claude 2.1.263 shows it dynamically linked against

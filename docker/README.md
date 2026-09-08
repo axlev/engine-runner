@@ -3,10 +3,17 @@
 Images the `claude` and `codex` adapters execute a reasoning stage inside,
 per [`docs/system-design.md`](../docs/system-design.md) section 9.
 
-> **These images have never been built or run.** They were written from
-> verified facts about the vendor binaries (linkage, install path, version)
-> in an environment with no Docker daemon access. The first build is the
-> real test — expect to fix something.
+> **Status:** the claude image builds and runs. Verified 2026-09-08 on
+> reviewbench-01: `engine-runner/adapter-claude:2.1.263`
+> (`sha256:d4c96baa5ef4…`) builds all 16 steps and prints
+> `2.1.263 (Claude Code)` as uid 10001 `reasoner`. That covers the three
+> things previously unverified: the `ARG`-in-`COPY` substitution, the
+> binary's runtime deps beyond libc under `bookworm-slim`, and the CLI
+> running non-root with an empty config home.
+>
+> **The codex image has still never been built**, and no stage has yet run
+> *through* either image — `internal/runner`'s mounts, network policy,
+> resource limits and credential injection remain unexercised.
 
 ## One Dockerfile, two images
 
@@ -119,6 +126,14 @@ credential in the environment:
 - `codex-code-mode-host`, the companion binary in the codex standalone
   package, is not copied in. `codex exec` shouldn't need it; if a stage
   turns out to, copy it alongside and keep the versions in lockstep.
-- Neither image has been built, so the layer set, the binary's runtime
-  dependencies beyond libc, and whether the CLIs run cleanly as a non-root
-  user with an empty home are all unverified.
+- The codex image has not been built. The claude build validates the shared
+  Dockerfile, but codex is statically linked and reads `CODEX_HOME`, so its
+  own build and non-root run are still unverified.
+- No stage has run *through* an image yet. The smoke test runs the baked
+  `CMD`; it does not exercise `internal/runner`'s read-only input mount,
+  output mount, network policy, resource limits, or credential injection.
+- `cmd/bench` invokes `docker` directly as the calling user. On a host where
+  the socket needs `sudo`, a live run fails on permission denied even though
+  the image is fine. `DockerRunner.DockerPath` is injectable, but `bench`
+  exposes no flag for it today; the practical fix is adding the user to the
+  `docker` group, which is root-equivalent and therefore a deliberate call.
