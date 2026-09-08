@@ -249,6 +249,16 @@ func (o *Orchestrator) runStageWithRetries(
 			continue
 		}
 
+		// The reasoner authors content; the engine supplies identity. This
+		// runs before validation because the schemas require the envelope
+		// fields the reasoner cannot know.
+		if err := stampEnvelope(result.OutputPath, runID, caseID, stage, time.Now()); err != nil {
+			record.Err = err.Error()
+			records = append(records, record)
+			lastErr = fmt.Errorf("stage %s attempt %d: %w", stage, attempt, err)
+			continue
+		}
+
 		if err := o.Validator.ValidateFile(result.OutputPath, stageProto.OutputSchema); err != nil {
 			record.Err = err.Error()
 			records = append(records, record)

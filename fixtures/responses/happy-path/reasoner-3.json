@@ -1,9 +1,4 @@
 {
-  "schema_version": "review-c/v1",
-  "run_id": "fixture-run",
-  "case_id": "happy-path",
-  "stage": "reasoner-3",
-  "generated_at": "2026-01-01T00:09:00Z",
   "review_b_ref": "sha256:fixture-review-b",
   "verdicts": [
     {

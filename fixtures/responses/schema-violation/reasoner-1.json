@@ -1,8 +1,7 @@
 {
-  "schema_version": "review-a/v1",
-  "case_id": "schema-violation",
-  "stage": "reasoner-2",
   "findings": [
-    { "title": "Missing id, description, severity, confidence, and evidence" }
+    {
+      "title": "Missing id, description, severity, confidence, and evidence"
+    }
   ]
 }

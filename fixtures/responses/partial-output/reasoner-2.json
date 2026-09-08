@@ -1,9 +1,4 @@
 {
-  "schema_version": "review-b/v1",
-  "run_id": "fixture-run",
-  "case_id": "partial-output",
-  "stage": "reasoner-2",
-  "generated_at": "2026-01-01T00:05:00Z",
   "assessments": [
     {
       "finding_id": "f1",

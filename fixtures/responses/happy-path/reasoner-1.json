@@ -1,9 +1,4 @@
 {
-  "schema_version": "review-a/v1",
-  "run_id": "fixture-run",
-  "case_id": "happy-path",
-  "stage": "reasoner-1",
-  "generated_at": "2026-01-01T00:00:00Z",
   "summary": "Broad pass over the diff; one likely off-by-one and one speculative nil-dereference.",
   "findings": [
     {

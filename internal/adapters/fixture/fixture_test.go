@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sort"
 	"testing"
 	"time"
 
@@ -73,10 +74,30 @@ func TestHappyPathAllStagesSucceed(t *testing.T) {
 		if err := json.Unmarshal(raw, &doc); err != nil {
 			t.Fatalf("stage %s: output is not valid JSON: %v", stage, err)
 		}
-		if doc["stage"] != string(stage) {
-			t.Errorf("stage %s: output \"stage\" field = %v, want %q", stage, doc["stage"], stage)
+		// Responses are content-only, as a real reasoner's are: the engine
+		// stamps schema_version/run_id/case_id/stage/generated_at after the
+		// adapter returns, so the adapter's own output carries none of them.
+		contentKey := map[adapters.Stage]string{
+			adapters.StageReasoner1: "findings",
+			adapters.StageReasoner2: "assessments",
+			adapters.StageReasoner3: "verdicts",
+		}[stage]
+		if _, ok := doc[contentKey]; !ok {
+			t.Errorf("stage %s: output is missing its content key %q; got keys %v", stage, contentKey, keysOf(doc))
+		}
+		if _, stamped := doc["run_id"]; stamped {
+			t.Errorf("stage %s: adapter output must not carry envelope fields; the engine stamps those", stage)
 		}
 	}
+}
+
+func keysOf(doc map[string]any) []string {
+	out := make([]string, 0, len(doc))
+	for k := range doc {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func TestInvalidJSONIsPassedThroughVerbatim(t *testing.T) {
@@ -114,11 +135,22 @@ func TestSchemaViolationIsPassedThroughVerbatim(t *testing.T) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatalf("expected valid JSON that merely violates the schema, got parse error: %v", err)
 	}
-	if _, hasRunID := doc["run_id"]; hasRunID {
-		t.Errorf("fixture was expected to omit run_id to violate the schema, but it was present")
+	// The violation is in the CONTENT, not the envelope: the engine stamps
+	// the envelope after this point, so a fixture that only omitted
+	// envelope fields would be silently repaired and stop testing anything.
+	// Here the single finding is missing every required field except title.
+	findings, ok := doc["findings"].([]any)
+	if !ok || len(findings) != 1 {
+		t.Fatalf("expected exactly one finding, got %v", doc["findings"])
 	}
-	if doc["stage"] != "reasoner-2" {
-		t.Errorf("fixture was expected to carry a deliberately wrong stage value, got %v", doc["stage"])
+	finding, ok := findings[0].(map[string]any)
+	if !ok {
+		t.Fatalf("finding is not an object: %v", findings[0])
+	}
+	for _, required := range []string{"id", "description", "severity", "confidence", "evidence"} {
+		if _, present := finding[required]; present {
+			t.Errorf("fixture must omit %q to violate review-a.schema.json, but it was present", required)
+		}
 	}
 }
 
