@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engine-runner.internal/schemas/boundary-validation.schema.json",
+  "title": "Boundary validation report",
+  "description": "The machine-readable pass/fail report the boundary validator produces for one prospective bundle, per docs/system-design.md section 6.2. A failing report means the case never reaches a runtime reasoner, so no LLM cost is incurred (section 12).",
+  "type": "object",
+  "required": ["schema_version", "case_id", "bundle_root", "validated_at", "result", "checks"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "boundary-validation/v1" },
+    "case_id": { "type": "string", "minLength": 1 },
+    "bundle_root": { "type": "string", "minLength": 1 },
+    "validated_at": { "type": "string", "format": "date-time" },
+    "result": {
+      "type": "string",
+      "enum": ["pass", "fail"]
+    },
+    "checks": {
+      "type": "array",
+      "description": "One entry per rule the validator ran, in a fixed order, so two runs over the same bundle produce byte-identical reports.",
+      "items": { "$ref": "#/$defs/check" }
+    },
+    "violations": {
+      "type": "array",
+      "description": "Every violation found, across all checks. Empty or absent when result is \"pass\".",
+      "items": { "$ref": "#/$defs/violation" }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "result": { "const": "fail" } } },
+      "then": { "required": ["violations"] }
+    }
+  ],
+  "$defs": {
+    "check": {
+      "type": "object",
+      "required": ["rule", "result"],
+      "additionalProperties": false,
+      "properties": {
+        "rule": { "$ref": "#/$defs/rule_name" },
+        "result": {
+          "type": "string",
+          "enum": ["pass", "fail"]
+        },
+        "violation_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "violation": {
+      "type": "object",
+      "required": ["rule", "detail"],
+      "additionalProperties": false,
+      "properties": {
+        "rule": { "$ref": "#/$defs/rule_name" },
+        "path": {
+          "type": "string",
+          "description": "Bundle-relative path the violation was found at, when it is path-specific."
+        },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    },
+    "rule_name": {
+      "type": "string",
+      "enum": [
+        "allowed_paths",
+        "no_irregular_files",
+        "no_git_metadata",
+        "reviewer_metadata_fields",
+        "oracle_shaped_content",
+        "checksum_manifest",
+        "pinned_schema_versions"
+      ]
+    }
+  }
+}

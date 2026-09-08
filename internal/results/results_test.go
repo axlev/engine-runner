@@ -212,3 +212,88 @@ func assertChecksumsAreAccurate(t *testing.T, runDir string) {
 		}
 	}
 }
+
+// TestWriteRunInvalidatedByBoundaryValidation covers the case where the
+// only thing that happened was rejection: no stage ran, so the boundary
+// report is the entire record of the run, and run.json must still be a
+// schema-valid artifact carrying status "invalidated" - distinct from a
+// plain execution "failed".
+func TestWriteRunInvalidatedByBoundaryValidation(t *testing.T) {
+	// Contaminate a copy of the clean bundle with an oracle-shaped file.
+	bundle := t.TempDir()
+	if err := filepath.WalkDir(happyPathBundle, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(happyPathBundle, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(bundle, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	}); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "reviewer", "ground_truth.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	o := newOrchestrator(t)
+	outcome, runErr := o.Run(context.Background(), "run-invalidated", "happy-path", bundle)
+	if runErr == nil {
+		t.Fatalf("expected the contaminated bundle to be rejected")
+	}
+	if outcome.Status != "invalidated" {
+		t.Fatalf("Status = %q, want invalidated", outcome.Status)
+	}
+
+	w, err := NewWriter(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	runDir, err := w.WriteRun(outcome)
+	if err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+
+	validateAgainst(t, "schemas/run-result.schema.json", filepath.Join(runDir, "run.json"))
+	validateAgainst(t, "schemas/boundary-validation.schema.json", filepath.Join(runDir, "boundary-validation.json"))
+
+	raw, err := os.ReadFile(filepath.Join(runDir, "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+	var doc struct {
+		Status             string `json:"status"`
+		InvalidationReason string `json:"invalidation_reason"`
+		Stages             []any  `json:"stages"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+	if doc.Status != "invalidated" {
+		t.Errorf("run.json status = %q, want \"invalidated\"", doc.Status)
+	}
+	if doc.InvalidationReason == "" {
+		t.Errorf("run.json is missing invalidation_reason")
+	}
+	if len(doc.Stages) != 0 {
+		t.Errorf("run.json lists %d stage(s); an invalidated case ran none", len(doc.Stages))
+	}
+
+	if _, err := os.Stat(filepath.Join(runDir, "stages")); !os.IsNotExist(err) {
+		t.Errorf("expected no stages/ directory for an invalidated case, got err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "evaluation")); !os.IsNotExist(err) {
+		t.Errorf("expected no evaluation/ directory for an invalidated case, got err=%v", err)
+	}
+
+	assertChecksumsAreAccurate(t, runDir)
+}

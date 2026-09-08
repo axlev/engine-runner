@@ -241,3 +241,88 @@ func TestOrchestratorReasoner2NeverSeesReviewAWhenHandoffDisabled(t *testing.T) 
 		}
 	}
 }
+
+// contaminatedBundle copies the clean fixture bundle and plants an
+// oracle-shaped file in it, the way a real mistake would.
+func contaminatedBundle(t *testing.T) string {
+	t.Helper()
+	dst := t.TempDir()
+	err := filepath.WalkDir(happyPathBundle, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(happyPathBundle, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
+	if err != nil {
+		t.Fatalf("copying bundle: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dst, "reviewer", "repository", "oracle.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	return dst
+}
+
+// TestBoundaryValidationRejectsBeforeAnyAdapterCall is the concrete proof of
+// section 12's "a boundary-validation failure invalidates the case before
+// LLM cost is incurred": the run is invalidated with zero recorded attempts,
+// and the FixtureAdapter - which records every call it receives - was never
+// invoked at all.
+func TestBoundaryValidationRejectsBeforeAnyAdapterCall(t *testing.T) {
+	protocol := loadPilotV1(t)
+	adapter, err := fixture.New(fixturesRootPath)
+	if err != nil {
+		t.Fatalf("fixture.New: %v", err)
+	}
+
+	o, err := New(repoRoot, pilotV1Path, protocol, adapter, t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	outcome, runErr := o.Run(context.Background(), "run-contaminated", "happy-path", contaminatedBundle(t))
+	if runErr == nil {
+		t.Fatalf("expected an error for a contaminated bundle")
+	}
+	if outcome.Status != "invalidated" {
+		t.Errorf("Status = %q, want \"invalidated\" (distinct from a plain execution failure)", outcome.Status)
+	}
+	if len(outcome.Attempts) != 0 {
+		t.Errorf("len(Attempts) = %d, want 0: no stage may run after validation fails", len(outcome.Attempts))
+	}
+	if len(adapter.Calls()) != 0 {
+		t.Errorf("adapter received %d call(s); it must never be invoked for an invalidated case", len(adapter.Calls()))
+	}
+	if outcome.BoundaryValidation == nil || outcome.BoundaryValidation.Passed() {
+		t.Errorf("expected a failing boundary-validation report on the outcome")
+	}
+	if outcome.FailureReason == "" {
+		t.Errorf("expected FailureReason to carry the violation summary")
+	}
+}
+
+func TestBoundaryValidationReportIsAttachedOnSuccessToo(t *testing.T) {
+	protocol := loadPilotV1(t)
+	o, err := New(repoRoot, pilotV1Path, protocol, newFixtureAdapter(t), t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	outcome, err := o.Run(context.Background(), "run-clean", "happy-path", happyPathBundle)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if outcome.BoundaryValidation == nil || !outcome.BoundaryValidation.Passed() {
+		t.Errorf("expected a passing boundary-validation report to be attached to a completed run")
+	}
+}

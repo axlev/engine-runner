@@ -92,8 +92,12 @@ milestone definitions.
 
 Known gaps, deliberately left open:
 
-- No `internal/boundaryvalidator` yet — it needs a real miner-produced
-  bundle to validate (Milestone 3).
+- No real mined case has been run yet. `internal/boundaryvalidator` exists
+  and gates every run, but it has only ever been exercised against
+  synthetic bundles and deliberately contaminated copies of them — a real
+  miner export will likely surface rules that need tightening or relaxing.
+- `miner/docs/export-contract.md` is not frozen; that lives in the miner
+  repository, which this role does not work in.
 - `configs/agents/*.yaml` from the documented layout is not created; its
   contract isn't specified and isn't load-bearing for the current
   milestones.

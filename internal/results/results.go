@@ -46,6 +46,15 @@ func (w *Writer) WriteRun(outcome orchestrator.RunOutcome) (string, error) {
 		return "", fmt.Errorf("results: creating run dir %s: %w", runDir, err)
 	}
 
+	// Written first, and written even when it is the only thing that
+	// happened: a case rejected by boundary validation never ran a stage,
+	// so this report is the entire record of why (section 11).
+	if outcome.BoundaryValidation != nil {
+		if err := writeJSONFile(filepath.Join(runDir, "boundary-validation.json"), outcome.BoundaryValidation); err != nil {
+			return "", err
+		}
+	}
+
 	stagesDir := filepath.Join(runDir, "stages")
 	stageDocs, err := w.writeStages(stagesDir, runDir, outcome.Attempts)
 	if err != nil {
@@ -108,7 +117,10 @@ func (w *Writer) writeStages(stagesDir, runDir string, attempts []orchestrator.S
 		byStage[rec.Stage] = append(byStage[rec.Stage], rec)
 	}
 
-	var docs []stageOutcomeDoc
+	// Non-nil on purpose: a run invalidated by boundary validation has no
+	// stages at all, and run-result.schema.json requires "stages" to be an
+	// array - a nil slice would marshal to null and fail validation.
+	docs := []stageOutcomeDoc{}
 	for _, stage := range order {
 		recs := byStage[stage]
 		stageDir := filepath.Join(stagesDir, string(stage))

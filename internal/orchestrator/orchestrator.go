@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/axlev/engine-runner/internal/adapters"
+	"github.com/axlev/engine-runner/internal/boundaryvalidator"
 	"github.com/axlev/engine-runner/internal/contextbuilder"
 	"github.com/axlev/engine-runner/internal/runner"
 )
@@ -48,13 +49,19 @@ type RunOutcome struct {
 	CaseID          string
 	ProtocolVersion string
 	CreatedAt       time.Time
-	Status          string // "completed" or "failed"
+	Status          string // "completed", "failed", or "invalidated"
 	FailureReason   string
 	Attempts        []StageAttemptRecord
 	ReviewAPath     string
 	ReviewBPath     string
 	ReviewCPath     string
 	Fingerprints    Fingerprints
+
+	// BoundaryValidation is the report from the pre-flight check on the
+	// prospective bundle. It is always present: a run that never got past
+	// validation is exactly the case where this report is the only
+	// evidence of what happened.
+	BoundaryValidation *boundaryvalidator.Report
 }
 
 var stageOrder = []adapters.Stage{adapters.StageReasoner1, adapters.StageReasoner2, adapters.StageReasoner3}
@@ -108,11 +115,33 @@ func (o *Orchestrator) Run(ctx context.Context, runID, caseID, bundleRoot string
 		CreatedAt:       time.Now().UTC(),
 	}
 
-	fp, err := computeStaticFingerprints(o.ProtocolPath, o.RepoRoot, bundleRoot, o.Protocol)
+	// Boundary validation runs before anything else touches the bundle
+	// (section 10 step 3). Section 12: a boundary-validation failure
+	// invalidates the case *before* LLM cost is incurred - so this returns
+	// without preparing a single stage context or invoking any adapter.
+	validation, err := boundaryvalidator.Validate(caseID, bundleRoot)
 	if err != nil {
-		return outcome, fmt.Errorf("orchestrator: computing fingerprints: %w", err)
+		return outcome, fmt.Errorf("orchestrator: boundary validation could not run: %w", err)
 	}
-	outcome.Fingerprints = fp
+	outcome.BoundaryValidation = &validation
+
+	// Fingerprints are computed even for a rejected case, so its sealed
+	// record still says which protocol, prompts and schemas were in play
+	// when it was rejected. Validation's diagnosis stays the reported
+	// error either way - it is the more actionable one.
+	fp, fpErr := computeStaticFingerprints(o.ProtocolPath, o.RepoRoot, bundleRoot, o.Protocol)
+	if fpErr == nil {
+		outcome.Fingerprints = fp
+	}
+
+	if !validation.Passed() {
+		outcome.Status = "invalidated"
+		outcome.FailureReason = validation.Summary()
+		return outcome, fmt.Errorf("orchestrator: boundary validation rejected case %q: %s", caseID, validation.Summary())
+	}
+	if fpErr != nil {
+		return outcome, fmt.Errorf("orchestrator: computing fingerprints: %w", fpErr)
+	}
 
 	var reviewAPath, reviewBPath string
 	policy := contextbuilder.HandoffPolicy{EnableAToB: o.Protocol.Handoffs.EnableAToB}

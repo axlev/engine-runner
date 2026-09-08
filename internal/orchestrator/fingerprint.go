@@ -68,10 +68,18 @@ func computeStaticFingerprints(protocolPath, repoRoot, bundleRoot string, protoc
 		fp.SchemaVersions[sp.OutputSchema] = schemaHash
 	}
 
+	// Carrying the bundle's own checksums forward is recording, not
+	// verifying: the boundary validator is the authority on whether they
+	// are complete and correct, and it has already run (or is about to)
+	// with a far stricter check than re-reading this file would be. So an
+	// unreadable or malformed manifest is left as an empty map rather than
+	// an error - that lets a run rejected by boundary validation still
+	// record which protocol and prompts were in play, instead of failing
+	// here with a less useful diagnosis than the one the validator gives.
 	checksumsPath := filepath.Join(bundleRoot, "control", "checksums.sha256")
 	data, err := os.ReadFile(checksumsPath)
 	if err != nil {
-		return Fingerprints{}, fmt.Errorf("reading bundle checksums %s: %w", checksumsPath, err)
+		return fp, nil
 	}
 	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
 		if line == "" {
@@ -79,7 +87,7 @@ func computeStaticFingerprints(protocolPath, repoRoot, bundleRoot string, protoc
 		}
 		fields := strings.Fields(line)
 		if len(fields) != 2 {
-			return Fingerprints{}, fmt.Errorf("malformed checksum line in %s: %q", checksumsPath, line)
+			continue
 		}
 		fp.InputChecksums[fields[1]] = fields[0]
 	}

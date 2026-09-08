@@ -22,6 +22,12 @@ communicating only through explicit, schema-validated handoff files:
 | `reasoner-2` | Evidence — causal chains | Bundle + `review-a.json` (when the protocol enables the handoff) | `review-b.json` |
 | `reasoner-3` | Adversarial verification | Same as reasoner-2, plus `review-b.json` | `review-c.json` |
 
+Before any of that runs, a deterministic boundary validator checks the
+case's prospective bundle for contamination — oracle-shaped files, git
+metadata, outcome-carrying metadata fields, checksum mismatches. A bundle
+that fails is rejected before a single token is spent, and the run is
+sealed as `invalidated` with a report naming exactly which rule tripped.
+
 Deterministic scoring runs afterwards, and only afterwards.
 
 ## Quick start
@@ -40,6 +46,7 @@ That produces a sealed, checksummed result tree:
 ```
 build/results/<run-id>/
 ├── run.json                      # protocol, status, fingerprints, per-stage summary
+├── boundary-validation.json      # per-rule pass/fail for the input bundle
 ├── checksums.sha256              # covers every other file in the tree
 ├── events.jsonl
 ├── stages/reasoner-{1,2,3}/
@@ -85,6 +92,7 @@ environment (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`;
 cmd/bench/              CLI entrypoint
 internal/
   adapters/             AgentAdapter contract + claude, codex, fixture
+  boundaryvalidator/    Rejects contaminated bundles before any stage runs
   contextbuilder/       Allow-lists exactly what each stage may see
   orchestrator/         Protocol loading, stage sequencing, retries, validation
   runner/               Fresh per-attempt workspaces + container isolation
@@ -108,7 +116,7 @@ reachable.
 ## Status
 
 Milestone 1 (deterministic vertical slice) is complete, as is the adapter
-work of Milestone 2. Known gaps are listed in [`AGENTS.md`](AGENTS.md) —
+work of Milestone 2 and the boundary validator that opens Milestone 3. Known gaps are listed in [`AGENTS.md`](AGENTS.md) —
 notably that container execution has been unit-tested at the
 argument-construction level but never run live, and that no adapter
 container image has been built yet.
