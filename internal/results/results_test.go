@@ -297,3 +297,71 @@ func TestWriteRunInvalidatedByBoundaryValidation(t *testing.T) {
 
 	assertChecksumsAreAccurate(t, runDir)
 }
+
+// TestPromptIsPreservedVerbatimInResult pins the property that makes prompt
+// experiments interpretable: the sealed result carries the prompt's actual
+// bytes, not just its hash. Comparing two arms is only possible if each run
+// says what it asked, without needing the repository at the right commit.
+func TestPromptIsPreservedVerbatimInResult(t *testing.T) {
+	o := newOrchestrator(t)
+	outcome, err := o.Run(context.Background(), "run-prompt", "happy-path", happyPathBundle)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	w, err := NewWriter(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	runDir, err := w.WriteRun(outcome)
+	if err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+
+	want, err := os.ReadFile(filepath.Join(repoRoot, "fixtures/prompts/placeholder.md"))
+	if err != nil {
+		t.Fatalf("reading the protocol's prompt file: %v", err)
+	}
+
+	for _, stage := range []string{"reasoner-1", "reasoner-2", "reasoner-3"} {
+		got, err := os.ReadFile(filepath.Join(runDir, "stages", stage, "prompt.md"))
+		if err != nil {
+			t.Fatalf("%s: prompt not preserved in result: %v", stage, err)
+		}
+		if string(got) != string(want) {
+			t.Errorf("%s: preserved prompt differs from the protocol's prompt file", stage)
+		}
+	}
+
+	raw, err := os.ReadFile(filepath.Join(runDir, "checksums.sha256"))
+	if err != nil {
+		t.Fatalf("reading checksums: %v", err)
+	}
+	if !strings.Contains(string(raw), "stages/reasoner-1/prompt.md") {
+		t.Errorf("preserved prompt is not covered by checksums.sha256")
+	}
+}
+
+// TestPromptIsPreservedForAFailedStage: a stage that never produced usable
+// output still has to record what it was asked, or the failure cannot be
+// interpreted later.
+func TestPromptIsPreservedForAFailedStage(t *testing.T) {
+	o := newOrchestrator(t)
+	outcome, runErr := o.Run(context.Background(), "run-prompt-fail", "schema-violation", happyPathBundle)
+	if runErr == nil {
+		t.Fatalf("expected the schema-violation scenario to fail")
+	}
+
+	w, err := NewWriter(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	runDir, err := w.WriteRun(outcome)
+	if err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(runDir, "stages", "reasoner-1", "prompt.md")); err != nil {
+		t.Errorf("a failed stage must still preserve its prompt: %v", err)
+	}
+}

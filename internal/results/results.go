@@ -139,6 +139,26 @@ func (w *Writer) writeStages(stagesDir, runDir string, attempts []orchestrator.S
 		}
 
 		last := recs[len(recs)-1]
+
+		// Preserve the prompt itself, not just its hash in the run's
+		// fingerprints. A prompt is experiment input, on the same footing
+		// as the case bundle and the diff: when two arms of an experiment
+		// differ, the next question is always what exactly changed, and a
+		// hash proves two runs differed without saying how. Copying the
+		// bytes makes a sealed result readable on its own, without needing
+		// the repository at the right commit - which is precisely the
+		// situation where the hash alone stops being enough.
+		//
+		// Written per stage rather than per winning attempt: every attempt
+		// of a stage is given the same prompt, and a stage that failed
+		// outright still needs to record what it was asked.
+		if last.Request.PromptPath != "" {
+			promptDst := filepath.Join(stageDir, filepath.Base(last.Request.PromptPath))
+			if err := copyFile(last.Request.PromptPath, promptDst); err != nil {
+				return nil, err
+			}
+		}
+
 		doc := stageOutcomeDoc{
 			Stage:          string(stage),
 			Adapter:        last.Result.Adapter,
