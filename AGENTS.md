@@ -84,6 +84,24 @@ weaken them need an explicit design decision, not a quiet refactor.
 - Prefer stating a known gap over fabricating plausible data. `Usage` left
   at zero with a comment explaining why beats invented token counts.
 
+## Escalation
+
+Stop and ask before, not after:
+- choosing between designs where the tradeoff is mine to make
+- narrowing, disabling, or making non-fatal any existing check
+- excluding a term/path/case from a detection list
+- anything touching the frozen protocol or schema versions
+
+## Reporting
+
+- Never describe a reconstructed artifact as the original. If a demo
+  required rebuilding, fabricating, or modifying input, say so in the
+  same sentence as the result.
+- "Verified" means the stated artifact was actually run. Otherwise say
+  what was actually run.
+- State what you did not verify.
+
+
 ## Current state
 
 Milestone 1 (deterministic vertical slice) and the adapter work of
@@ -112,3 +130,4 @@ Known gaps, deliberately left open:
   sandbox, and no adapter container image has been built yet).
 - `pilot-v1.yaml` still points at a placeholder prompt; authoring the real
   frozen reasoner prompts is Milestone 4 work.
+
