@@ -35,6 +35,19 @@ path at all.
 
 A plain directory tree of the source as of the cutoff. Required.
 
+**The cutoff tree, not the base tree** — the state *after* the change under
+review, matching `cutoff_commit` rather than `base_commit`. This is not a
+detail: `reviewer/diff.patch` runs base to cutoff, so every added line in
+that patch must be present here, and a reviewer citing an added line is
+citing a real line of a real file.
+
+The engine enforces the consequence. `internal/orchestrator/evidence.go`
+fails any stage whose finding cites a file absent from this tree, or a line
+number past the end of it. A base-tree snapshot would therefore fail on
+almost every citation of an added line — the very lines a reviewer is most
+likely to have something to say about — and the failure would surface as a
+stage error long after the bundle passed boundary validation.
+
 **Not** a git repository, and not a patch to be applied. The engine mounts
 this read-only into an isolated container; there is no checkout step, no
 git dependency, and therefore no post-mount mutation that could
@@ -54,6 +67,9 @@ including at the oracle bundle.
 
 The admissible diff, as a unified patch. Required. Named `diff.patch` —
 the miner's current `change.patch` must be renamed.
+
+Direction is `base_commit` to `cutoff_commit`: its added lines are the ones
+present in `reviewer/repository/`, never the ones missing from it.
 
 ## `reviewer/metadata.json`
 
@@ -98,6 +114,10 @@ Engine-only routing and identity. Must carry
 `"schema_version": "engine-manifest/v1"`. Other fields (case id, base and
 cutoff commits, snapshot format) are recorded but not currently
 constrained by the validator.
+
+Unconstrained is not unimportant: nothing checks that `cutoff_commit` is
+the commit `reviewer/repository/` was taken from, so a mismatch here is
+invisible until someone tries to reproduce the case from its provenance.
 
 The engine never passes this file to a reasoner.
 
