@@ -67,8 +67,33 @@ static void claim_dispatch_is_total(void)
 		"claim_dispatch_is_total: all 256 type octets dispatched, no OOB\n");
 }
 
+/* CLAIM 3 (regression guard): the handler table is populated before any PDU
+ * is parsed. An earlier draft of this case defined rpd_tlv_init() but never
+ * called it, leaving every slot NULL and turning the dispatch into a null
+ * function-pointer call -- an unintended second defect that muddied what the
+ * case measures. rpd_main.c now registers the table at daemon start. Parse
+ * WITHOUT calling init here and require the crash, so the day someone drops
+ * that call the oracle says so instead of the case quietly changing meaning. */
+static void claim_uninitialised_table_would_crash(void)
+{
+	const uint8_t pdu[] = {1, 2, 0, 30};
+	struct stream *s = stream_of(pdu, sizeof(pdu));
+	struct rpd_tlv_set out;
+
+	memset(&out, 0, sizeof(out));
+	fprintf(stderr, "claim_uninit: parsing with an unregistered table\n");
+	rpd_tlv_parse(s, &out);
+	fprintf(stderr, "claim_uninit: RETURNED WITHOUT ABORT\n");
+	stream_free(s);
+}
+
 int main(int argc, char **argv)
 {
+	if (argc > 1 && strcmp(argv[1], "uninit") == 0) {
+		claim_uninitialised_table_would_crash();
+		return 0;
+	}
+
 	rpd_tlv_init();
 
 	if (argc > 1 && strcmp(argv[1], "dispatch") == 0) {

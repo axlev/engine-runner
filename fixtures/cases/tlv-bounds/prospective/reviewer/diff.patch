@@ -1,3 +1,15 @@
+diff --git a/rpdd/rpd_main.c b/rpdd/rpd_main.c
+index aeaf6b6..41ebae9 100644
+--- a/rpdd/rpd_main.c
++++ b/rpdd/rpd_main.c
+@@ -9,6 +9,7 @@
+ static void rpd_module_init(void)
+ {
+ 	zlog_err("rpdd starting");
++	rpd_tlv_init();
+ }
+ 
+ int main(void)
 diff --git a/rpdd/rpd_tlv.c b/rpdd/rpd_tlv.c
 index 86e85df..f048094 100644
 --- a/rpdd/rpd_tlv.c

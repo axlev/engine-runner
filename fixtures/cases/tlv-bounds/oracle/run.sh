@@ -44,5 +44,20 @@ else
     fail=1
 fi
 
+echo "== claim 3: the handler table is registered before use =="
+if grep -q "rpd_tlv_init();" "$SNAP"/rpdd/rpd_main.c 2>/dev/null; then
+    echo "  confirmed: rpd_main.c registers the table at daemon start"
+    # And prove the failure it prevents is real, by parsing without it.
+    if out=$(/tmp/rpd_oracle.$$ uninit 2>&1); then
+        echo "  NOTE: an unregistered table did not crash; the guard is weaker than assumed"
+    else
+        echo "  and without it: $(grep -m1 'SEGV\|ERROR: AddressSanitizer' <<<"$out" | cut -c1-90)"
+    fi
+else
+    echo "GROUND TRUTH BROKEN: nothing calls rpd_tlv_init(), so every dispatch"
+    echo "  is a null function-pointer call - an unintended second defect."
+    fail=1
+fi
+
 rm -f /tmp/rpd_oracle.$$
 exit $fail
