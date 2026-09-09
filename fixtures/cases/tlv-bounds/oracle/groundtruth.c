@@ -67,6 +67,37 @@ static void claim_dispatch_is_total(void)
 		"claim_dispatch_is_total: all 256 type octets dispatched, no OOB\n");
 }
 
+/* CLAIM 2b (not a defect): rpd_tlv_parse_auth writes len-1 octets into a
+ * 16-byte digest with no guard of its own, which is the shape of a stack
+ * smash from wire data. It is unreachable: the auth type's descriptor
+ * declares exact_len = RPD_AUTH_TLV_LEN (17), and the decode loop rejects
+ * any other length BEFORE dispatching, so the handler is only ever entered
+ * with len == 17 and writes exactly RPD_AUTH_DIGEST_LEN == 16 octets.
+ * Drive every one of the 256 declarable lengths with a full body present
+ * and show no overflow occurs. */
+static void claim_auth_len_is_constrained(void)
+{
+	int declared;
+
+	for (declared = 0; declared < 256; declared++) {
+		uint8_t pdu[2 + 255];
+		struct stream *s;
+		struct rpd_tlv_set out;
+
+		pdu[0] = RPD_TLV_AUTH;
+		pdu[1] = (uint8_t)declared;
+		memset(pdu + 2, 0xAA, 255);
+
+		s = stream_of(pdu, 2 + (size_t)declared);
+		memset(&out, 0, sizeof(out));
+		rpd_tlv_parse(s, &out);
+		stream_free(s);
+	}
+
+	fprintf(stderr,
+		"claim_auth_len: all 256 declarable auth lengths driven, no overflow\n");
+}
+
 /* CLAIM 3 (regression guard): the handler table is populated before any PDU
  * is parsed. An earlier draft of this case defined rpd_tlv_init() but never
  * called it, leaving every slot NULL and turning the dispatch into a null
@@ -98,6 +129,11 @@ int main(int argc, char **argv)
 
 	if (argc > 1 && strcmp(argv[1], "dispatch") == 0) {
 		claim_dispatch_is_total();
+		return 0;
+	}
+
+	if (argc > 1 && strcmp(argv[1], "auth") == 0) {
+		claim_auth_len_is_constrained();
 		return 0;
 	}
 

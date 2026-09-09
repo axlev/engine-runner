@@ -44,6 +44,15 @@ else
     fail=1
 fi
 
+echo "== claim 2b: the auth digest write is length-constrained =="
+if out=$(/tmp/rpd_oracle.$$ auth 2>&1); then
+    echo "  confirmed: $(grep -m1 'claim_auth_len' <<<"$out")"
+else
+    echo "GROUND TRUTH BROKEN: an auth TLV overflowed the digest buffer"
+    echo "$out" | grep -m2 'ERROR: AddressSanitizer\|WRITE of size' | sed 's/^/  /'
+    fail=1
+fi
+
 echo "== claim 3: the handler table is registered before use =="
 if grep -q "rpd_tlv_init();" "$SNAP"/rpdd/rpd_main.c 2>/dev/null; then
     echo "  confirmed: rpd_main.c registers the table at daemon start"

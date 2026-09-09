@@ -11,20 +11,18 @@ index aeaf6b6..41ebae9 100644
  
  int main(void)
 diff --git a/rpdd/rpd_tlv.c b/rpdd/rpd_tlv.c
-index 86e85df..f048094 100644
+index 86e85df..f03a064 100644
 --- a/rpdd/rpd_tlv.c
 +++ b/rpdd/rpd_tlv.c
-@@ -5,6 +5,66 @@
+@@ -5,6 +5,89 @@
  
  #include "rpd_tlv.h"
  
 +static int rpd_tlv_parse_holdtime(struct stream *s, uint8_t len,
 +				  struct rpd_tlv_set *out)
 +{
-+	if (len != 2) {
-+		zlog_err("holdtime TLV has length %u, want 2", len);
-+		return -1;
-+	}
++	(void)len;
++
 +	if (stream_readable(s) < 2)
 +		return -1;
 +
@@ -48,6 +46,15 @@ index 86e85df..f048094 100644
 +	return 0;
 +}
 +
++static int rpd_tlv_parse_auth(struct stream *s, uint8_t len,
++			      struct rpd_tlv_set *out)
++{
++	out->auth.key_id = stream_getc(s);
++	stream_get(out->auth.digest, s, len - 1);
++
++	return 0;
++}
++
 +static int rpd_tlv_skip(struct stream *s, uint8_t len,
 +			struct rpd_tlv_set *out)
 +{
@@ -63,29 +70,46 @@ index 86e85df..f048094 100644
 +typedef int (*rpd_tlv_handler_t)(struct stream *s, uint8_t len,
 +				 struct rpd_tlv_set *out);
 +
-+/* Dispatch on the wire type octet. Every slot is populated, so an
-+ * unrecognised type skips its body rather than aborting the PDU. */
-+static rpd_tlv_handler_t tlv_handlers[RPD_TLV_MAX];
++/* One descriptor per wire type.
++ *
++ * exact_len is the TLV length this type must carry; the decode loop rejects
++ * anything else before dispatching, so a handler for a fixed-length TLV is
++ * entered only with the length its descriptor declares. Zero means the type
++ * is variable-length and the handler validates for itself. */
++struct rpd_tlv_desc {
++	rpd_tlv_handler_t handler;
++	uint8_t exact_len;
++};
++
++static struct rpd_tlv_desc tlv_handlers[RPD_TLV_MAX];
 +
 +void rpd_tlv_init(void)
 +{
 +	int i;
 +
-+	for (i = 0; i < RPD_TLV_MAX; i++)
-+		tlv_handlers[i] = rpd_tlv_skip;
++	for (i = 0; i < RPD_TLV_MAX; i++) {
++		tlv_handlers[i].handler = rpd_tlv_skip;
++		tlv_handlers[i].exact_len = 0;
++	}
 +
-+	tlv_handlers[RPD_TLV_HOLDTIME] = rpd_tlv_parse_holdtime;
-+	tlv_handlers[RPD_TLV_AREA_ADDR] = rpd_tlv_parse_area_addr;
++	tlv_handlers[RPD_TLV_HOLDTIME].handler = rpd_tlv_parse_holdtime;
++	tlv_handlers[RPD_TLV_HOLDTIME].exact_len = 2;
++
++	tlv_handlers[RPD_TLV_AREA_ADDR].handler = rpd_tlv_parse_area_addr;
++
++	tlv_handlers[RPD_TLV_AUTH].handler = rpd_tlv_parse_auth;
++	tlv_handlers[RPD_TLV_AUTH].exact_len = RPD_AUTH_TLV_LEN;
 +}
 +
  /* Decode the TLVs of one PDU body.
   *
   * The caller has already validated that the stream holds exactly the
-@@ -12,36 +72,19 @@
+@@ -12,36 +95,31 @@
  int rpd_tlv_parse(struct stream *s, struct rpd_tlv_set *out)
  {
  	while (stream_readable(s) > 0) {
 -		uint8_t type;
++		struct rpd_tlv_desc *desc;
 +		int type;
  		uint8_t len;
  
@@ -110,8 +134,18 @@ index 86e85df..f048094 100644
 -				goto stream_failure;
 -			s->getp += len;
 -			break;
--		}
-+		if (tlv_handlers[type](s, len, out) < 0)
++		desc = &tlv_handlers[type];
++
++		if (desc->exact_len != 0 && len != desc->exact_len) {
++			zlog_err("TLV type %d has length %u, want %u", type,
++				 len, desc->exact_len);
++			return -1;
+ 		}
++
++		if (stream_readable(s) < len)
++			goto stream_failure;
++
++		if (desc->handler(s, len, out) < 0)
 +			goto stream_failure;
  	}
  
@@ -123,11 +157,34 @@ index 86e85df..f048094 100644
  	return -1;
  }
 diff --git a/rpdd/rpd_tlv.h b/rpdd/rpd_tlv.h
-index 24e85f7..82234c6 100644
+index 24e85f7..afa8b80 100644
 --- a/rpdd/rpd_tlv.h
 +++ b/rpdd/rpd_tlv.h
-@@ -25,6 +25,7 @@ struct rpd_tlv_set {
+@@ -12,6 +12,11 @@
+ 
+ #define RPD_TLV_HOLDTIME 1
+ #define RPD_TLV_AREA_ADDR 2
++#define RPD_TLV_AUTH 3
++
++/* Authentication TLV: one key-id octet followed by the digest. */
++#define RPD_AUTH_DIGEST_LEN 16
++#define RPD_AUTH_TLV_LEN 17
+ 
+ #define RPD_AREA_ADDR_MAX 255
+ 
+@@ -20,11 +25,18 @@ struct rpd_area_addr {
+ 	uint8_t addr[RPD_AREA_ADDR_MAX];
+ };
+ 
++struct rpd_auth {
++	uint8_t key_id;
++	uint8_t digest[RPD_AUTH_DIGEST_LEN];
++};
++
+ struct rpd_tlv_set {
+ 	uint16_t holdtime;
  	struct rpd_area_addr area;
++	struct rpd_auth auth;
  };
  
 +void rpd_tlv_init(void);
