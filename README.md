@@ -71,7 +71,7 @@ property the whole design exists to support.
 | `-protocol` | `configs/protocols/pilot-v1.yaml` | Frozen protocol to run under |
 | `-results-root` | `build/results` | Where the sealed run tree is written |
 | `-workspace-root` | `~/.cache/engine-runner/runs` | Per-attempt scratch. Outside the repo on purpose: it is bind-mounted into stage containers, which may never see the engine's source |
-| `-agents` | `fixtures/agents` | Vendor binding directory; use `configs/agents` for a real run |
+| `-agents` | `fixtures/agents/fixture.yaml` | Agent set file — one arm's vendor binding; `configs/agents/<arm>.yaml` for a real run |
 | `-adapter-image` | — | Container image, for the `claude` / `codex` adapters |
 
 ## Two configurations: the experiment and the vendor binding
@@ -81,7 +81,7 @@ A run is defined by two files that vary independently:
 - **`-protocol configs/protocols/pilot-v1.yaml`** — the *experiment*:
   prompts, handoffs, output contracts, stopping rules. This is the frozen
   cohort definition and names no vendor.
-- **`-agents <dir>`** — the *vendor binding*: which adapter and model runs
+- **`-agents <file>`** — the *vendor binding*: which adapter and model runs
   each stage, at what effort and under what budget.
 
 So the same frozen cohort can be smoke-tested and then run for real, and
@@ -89,20 +89,26 @@ both produce the same `protocol_version` and the same `protocol_hash`:
 
 ```bash
 # smoke test - no credentials, no network, no cost (the default)
-bench -agents fixtures/agents      -bundle ... -case-id ...
+bench -agents fixtures/agents/fixture.yaml -bundle ... -case-id ...
 
-# debugging the plumbing against a real vendor, on a cheap model
-bench -agents configs/agents-debug -bundle ... -case-id ...
+# the cheap arm: debugging, and the low end of the cost curve
+bench -agents configs/agents/haiku.yaml    -bundle ... -case-id ...
 
-# the real cohort
-bench -agents configs/agents       -bundle ... -case-id ...
+# a real cohort
+bench -agents configs/agents/sonnet.yaml   -bundle ... -case-id ...
+bench -agents configs/agents/opus.yaml     -bundle ... -case-id ...
 ```
 
-`configs/agents-debug` exists because handoffs, envelope stamping, schema
-validation and budget detection exercise the same code paths whatever model
-answers — paying Opus rates to find a mount bug is waste. It is **not for
-results**: a run under it is a system test, not a measurement, and mixing
-models within a cohort would violate the frozen-protocol principle.
+**One file per arm.** Everything the three stages share — adapter, model,
+effort — is stated once; only the budgets, which genuinely differ per stage,
+are repeated. So a new arm is a copy of one file with the model line
+changed, not three files kept in sync.
+
+Arms are how the cost curve gets measured: Milestone 4's exit criterion is
+"cost per incremental benefit", which needs at least two price points. A
+cohort runs entirely on **one** arm — haiku's findings are not comparable
+with opus's, so comparing means running the same cases through each, never
+interleaving them.
 
 Both the protocol and every agent config are hashed into each run's
 `fingerprints`, so a result records which experiment *and* which vendor
@@ -135,7 +141,7 @@ internal/
   results/              Sealed, checksummed result tree
   evaluation/           Deterministic scoring
 configs/protocols/      Frozen protocol manifests (the experiment)
-configs/agents/         Per-stage vendor binding (adapter, model, budget)
+configs/agents/         One file per arm: vendor binding (adapter, model, budgets)
 schemas/                JSON Schemas for every artifact
 fixtures/               Synthetic cases, prompts, and adapter scenarios
 ```

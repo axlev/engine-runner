@@ -19,7 +19,7 @@ const (
 	pilotV1Path      = "../../configs/protocols/pilot-v1.yaml"
 	happyPathBundle  = "../../fixtures/cases/happy-path/prospective"
 	fixturesRoot     = "../../fixtures"
-	fixtureAgentsDir = "../../fixtures/agents"
+	fixtureAgentsDir = "../../fixtures/agents/fixture.yaml"
 )
 
 func newOrchestrator(t *testing.T) *orchestrator.Orchestrator {
@@ -40,7 +40,7 @@ func newOrchestrator(t *testing.T) *orchestrator.Orchestrator {
 		RepoRoot:      repoRoot,
 		ProtocolPath:  pilotV1Path,
 		Protocol:      protocol,
-		AgentsDir:     fixtureAgentsDir,
+		AgentSetPath:  fixtureAgentsDir,
 		AgentSet:      agentSet,
 		Adapters:      map[string]adapters.AgentAdapter{"fixture": adapter},
 		WorkspaceRoot: t.TempDir(),

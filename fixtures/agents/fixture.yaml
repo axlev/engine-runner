@@ -1,0 +1,43 @@
+# Vendor binding for smoke tests: the deterministic fixture adapter.
+#
+# No credentials, no network, no container, no cost. The FixtureAdapter
+# replays canned responses keyed by (scenario, stage, attempt), so a run
+# through this arm exercises the whole orchestrator - handoffs, envelope
+# stamping, schema validation, retries, sealing - with nothing to pay for
+# and nothing to be flaky.
+#
+#   bench -agents fixtures/agents/fixture.yaml -bundle ... -case-id happy-path
+#
+# The case-id selects the scenario, so -case-id timeout or schema-violation
+# exercises the failure paths.
+
+adapter: fixture
+model: fixture-model
+
+# The fixture adapter ignores this: it is here so the field is exercised by
+# the loader. It is deliberately NOT a claude effort level - nothing
+# validates this field, and a fixture arm must not look like a vendor one.
+reasoning_level: fixture-effort
+
+stages:
+  reasoner-1:
+    budget:
+      max_input_tokens: 120000
+      max_output_tokens: 8000
+      max_wall_clock_seconds: 900
+      max_tool_calls: 60
+      max_cost_usd: 2.00
+  reasoner-2:
+    budget:
+      max_input_tokens: 160000
+      max_output_tokens: 8000
+      max_wall_clock_seconds: 900
+      max_tool_calls: 80
+      max_cost_usd: 2.50
+  reasoner-3:
+    budget:
+      max_input_tokens: 160000
+      max_output_tokens: 6000
+      max_wall_clock_seconds: 900
+      max_tool_calls: 60
+      max_cost_usd: 2.00

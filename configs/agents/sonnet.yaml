@@ -1,0 +1,39 @@
+# Vendor binding: claude, sonnet-5. The middle arm.
+#
+# The suggested PRIMARY arm for a first real cohort. The benchmark needs
+# room to show the pipeline's value: too weak a model and all three stages
+# find nothing, too strong and reasoner-1 finds everything, and neither
+# leaves an increment to measure. Sonnet is the reasonable middle guess -
+# and it is a guess, not a measurement, until a real cohort runs.
+#
+# NOT MIXABLE WITHIN A COHORT: a cohort runs entirely on one arm.
+
+adapter: claude
+model: claude-sonnet-5
+reasoning_level: high
+
+stages:
+  reasoner-1:
+    budget:
+      max_input_tokens: 400000
+      max_output_tokens: 32000
+      max_wall_clock_seconds: 600
+      # Declared even though claude's envelope carries no tool-call count,
+      # so a run warns that the bound went unenforced. That warning is the
+      # feature: a limit silently skipped is worse than one openly unmet.
+      max_tool_calls: 60
+      max_cost_usd: 2.50
+  reasoner-2:
+    budget:
+      max_input_tokens: 500000
+      max_output_tokens: 32000
+      max_wall_clock_seconds: 600
+      max_tool_calls: 80
+      max_cost_usd: 2.50
+  reasoner-3:
+    budget:
+      max_input_tokens: 500000
+      max_output_tokens: 24000
+      max_wall_clock_seconds: 600
+      max_tool_calls: 60
+      max_cost_usd: 2.50

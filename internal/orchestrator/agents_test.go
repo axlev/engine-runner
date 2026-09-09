@@ -8,11 +8,14 @@ import (
 	"github.com/axlev/engine-runner/internal/adapters"
 )
 
-func writeAgentFile(t *testing.T, dir, stage, body string) {
+// writeArm writes a throwaway agent set file and returns its path.
+func writeArm(t *testing.T, body string) string {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, stage+".yaml"), []byte(body), 0o644); err != nil {
+	path := filepath.Join(t.TempDir(), "arm.yaml")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
+	return path
 }
 
 func TestLoadFixtureAgentSet(t *testing.T) {
@@ -38,23 +41,115 @@ func TestLoadFixtureAgentSet(t *testing.T) {
 // even though it is not runnable yet (no adapter image exists). A malformed
 // real agent set would otherwise only be discovered on the first live run.
 func TestLoadRealAgentSet(t *testing.T) {
-	set, err := LoadAgentSet("../../configs/agents")
-	if err != nil {
-		t.Fatalf("LoadAgentSet: %v", err)
-	}
-	if got := set.Adapters(); len(got) != 1 || got[0] != "claude" {
-		t.Errorf("Adapters() = %v, want exactly [claude]", got)
+	for _, arm := range []string{"opus", "sonnet", "haiku"} {
+		t.Run(arm, func(t *testing.T) {
+			set, err := LoadAgentSet("../../configs/agents/" + arm + ".yaml")
+			if err != nil {
+				t.Fatalf("LoadAgentSet: %v", err)
+			}
+			if got := set.Adapters(); len(got) != 1 || got[0] != "claude" {
+				t.Errorf("Adapters() = %v, want exactly [claude]", got)
+			}
+			// Every stage must inherit the arm's model and carry a spending
+			// ceiling: an arm that silently left one unbounded would only
+			// show up as an unexpected bill.
+			for _, stage := range stageOrder {
+				if set[stage].Model == "" {
+					t.Errorf("%s: model did not reach the stage", stage)
+				}
+				if set[stage].Budget.MaxCostUSD <= 0 {
+					t.Errorf("%s: no cost ceiling", stage)
+				}
+			}
+		})
 	}
 }
 
-func TestLoadAgentSetRejectsMissingStage(t *testing.T) {
-	dir := t.TempDir()
-	writeAgentFile(t, dir, "reasoner-1", "adapter: fixture\nmodel: m\n")
-	writeAgentFile(t, dir, "reasoner-2", "adapter: fixture\nmodel: m\n")
-	// reasoner-3 deliberately absent: a partial set would run two stages and
-	// fail the third after spending money.
-	if _, err := LoadAgentSet(dir); err == nil {
-		t.Fatalf("expected an error for an agent set missing reasoner-3")
+// TestArmDefaultsReachEveryStage pins the point of the one-file-per-arm
+// format: adapter, model and effort are stated once and inherited, so a new
+// arm is one changed line rather than three files kept in sync.
+func TestArmDefaultsReachEveryStage(t *testing.T) {
+	path := writeArm(t, `
+adapter: fixture
+model: shared-model
+reasoning_level: high
+budget:
+  max_cost_usd: 1.5
+stages:
+  reasoner-1: {}
+  reasoner-2: {}
+  reasoner-3: {}
+`)
+	set, err := LoadAgentSet(path)
+	if err != nil {
+		t.Fatalf("LoadAgentSet: %v", err)
+	}
+	for _, stage := range stageOrder {
+		cfg := set[stage]
+		if cfg.Model != "shared-model" || cfg.ReasoningLevel != "high" || cfg.Budget.MaxCostUSD != 1.5 {
+			t.Errorf("%s did not inherit the arm defaults: %+v", stage, cfg)
+		}
+	}
+}
+
+// A per-stage override must win over the arm default - running discovery on
+// one vendor and verification on another is a coherent experiment.
+func TestPerStageOverrideWins(t *testing.T) {
+	path := writeArm(t, `
+adapter: fixture
+model: shared-model
+stages:
+  reasoner-1: {}
+  reasoner-2:
+    adapter: claude
+    model: other-model
+    budget:
+      max_cost_usd: 9.0
+  reasoner-3: {}
+`)
+	set, err := LoadAgentSet(path)
+	if err != nil {
+		t.Fatalf("LoadAgentSet: %v", err)
+	}
+	if got := set[adapters.StageReasoner2]; got.Adapter != "claude" || got.Model != "other-model" || got.Budget.MaxCostUSD != 9.0 {
+		t.Errorf("reasoner-2 override did not win: %+v", got)
+	}
+	if got := set[adapters.StageReasoner1].Model; got != "shared-model" {
+		t.Errorf("reasoner-1 should keep the default, got %q", got)
+	}
+}
+
+// A typo in a key must fail loudly. Silently ignoring "budgets:" would bind
+// a run to defaults nobody chose, and the first symptom would be a bill.
+func TestUnknownKeyIsRejected(t *testing.T) {
+	path := writeArm(t, "adapter: fixture\nmodel: m\nbudgets:\n  max_cost_usd: 1\n")
+	if _, err := LoadAgentSet(path); err == nil {
+		t.Fatalf("expected an error for the misspelled key \"budgets\"")
+	}
+}
+
+// A stage name that is not part of the protocol must fail rather than be
+// silently dropped: it means the author believed they configured something.
+func TestUnknownStageIsRejected(t *testing.T) {
+	path := writeArm(t, "adapter: fixture\nmodel: m\nstages:\n  reasoner-9:\n    budget:\n      max_cost_usd: 1\n")
+	if _, err := LoadAgentSet(path); err == nil {
+		t.Fatalf("expected an error for unknown stage reasoner-9")
+	}
+}
+
+// A stage that resolves to no adapter or model must fail up front: a
+// partial set would run two stages and fail the third after spending money.
+func TestLoadAgentSetRejectsStageWithoutBinding(t *testing.T) {
+	path := writeArm(t, `
+model: only-a-model
+stages:
+  reasoner-1:
+    adapter: fixture
+  reasoner-2:
+    adapter: fixture
+`)
+	if _, err := LoadAgentSet(path); err == nil {
+		t.Fatalf("expected an error: reasoner-3 resolves to no adapter")
 	}
 }
 
@@ -64,12 +159,8 @@ func TestLoadAgentSetRejectsMissingAdapterOrModel(t *testing.T) {
 		"no model":   "adapter: fixture\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
-			for _, stage := range stageOrder {
-				writeAgentFile(t, dir, string(stage), body)
-			}
-			if _, err := LoadAgentSet(dir); err == nil {
-				t.Fatalf("expected an error for an agent config with %s", name)
+			if _, err := LoadAgentSet(writeArm(t, body)); err == nil {
+				t.Fatalf("expected an error for an agent set with %s", name)
 			}
 		})
 	}
@@ -97,7 +188,7 @@ func TestNewRejectsMissingAdapter(t *testing.T) {
 		RepoRoot:      repoRoot,
 		ProtocolPath:  pilotV1Path,
 		Protocol:      loadPilotV1(t),
-		AgentsDir:     fixtureAgentsDir,
+		AgentSetPath:  fixtureAgentsDir,
 		AgentSet:      loadFixtureAgents(t),
 		Adapters:      map[string]adapters.AgentAdapter{}, // none supplied
 		WorkspaceRoot: t.TempDir(),

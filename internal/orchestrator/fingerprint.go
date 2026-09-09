@@ -47,7 +47,7 @@ func sha256HexFile(path string) (string, error) {
 // prospective bundle's own checksums.sha256 verbatim. It does not read
 // AdapterVersions - those are only known once stages have actually run, and
 // are filled in separately from the run's attempt records.
-func computeStaticFingerprints(protocolPath, agentsDir, repoRoot, bundleRoot string, protocol *Protocol) (Fingerprints, error) {
+func computeStaticFingerprints(protocolPath, agentSetPath, repoRoot, bundleRoot string, protocol *Protocol) (Fingerprints, error) {
 	fp := Fingerprints{
 		SchemaVersions:    map[string]string{},
 		PromptHashes:      map[string]string{},
@@ -70,11 +70,17 @@ func computeStaticFingerprints(protocolPath, agentsDir, repoRoot, bundleRoot str
 	// The agent set is hashed alongside the protocol: a run's vendor binding
 	// is as much a part of what produced its numbers as the experiment is,
 	// and the two vary independently.
+	//
+	// One arm is now one file, so every stage's binding hashes to the same
+	// value. Still recorded per stage rather than once: the map says "this
+	// is where THIS stage's binding came from", which stays true if a
+	// future arm splits stages across files, and keeps the fingerprint
+	// shape stable for anything already reading it.
+	agentHash, err := sha256HexFile(agentSetPath)
+	if err != nil {
+		return Fingerprints{}, err
+	}
 	for _, stage := range stageOrder {
-		agentHash, err := sha256HexFile(filepath.Join(agentsDir, string(stage)+".yaml"))
-		if err != nil {
-			return Fingerprints{}, err
-		}
 		fp.AgentConfigHashes[string(stage)] = agentHash
 	}
 

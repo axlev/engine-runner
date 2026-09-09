@@ -18,7 +18,7 @@ func TestRunHappyPathEndToEnd(t *testing.T) {
 	err := run([]string{
 		"-repo-root", "../..",
 		"-protocol", "../../configs/protocols/pilot-v1.yaml",
-		"-agents", "../../fixtures/agents",
+		"-agents", "../../fixtures/agents/fixture.yaml",
 		"-fixtures-dir", "../../fixtures",
 		"-bundle", happyPathBundle,
 		"-case-id", "happy-path",
@@ -59,7 +59,7 @@ func TestRunFailedCaseStillWritesResultsAndReturnsError(t *testing.T) {
 	err := run([]string{
 		"-repo-root", "../..",
 		"-protocol", "../../configs/protocols/pilot-v1.yaml",
-		"-agents", "../../fixtures/agents",
+		"-agents", "../../fixtures/agents/fixture.yaml",
 		"-fixtures-dir", "../../fixtures",
 		"-bundle", happyPathBundle,
 		"-case-id", "schema-violation",
@@ -92,13 +92,13 @@ func TestRunRequiresBundleAndCaseID(t *testing.T) {
 }
 
 func TestRunRejectsUnimplementedAdapter(t *testing.T) {
-	agentsDir := writeAgentSet(t, "gemini", "some-model")
+	armPath := writeAgentSet(t, "gemini", "some-model")
 
 	var stdout bytes.Buffer
 	err := run([]string{
 		"-repo-root", "../..",
 		"-protocol", "../../configs/protocols/pilot-v1.yaml",
-		"-agents", agentsDir,
+		"-agents", armPath,
 		"-bundle", happyPathBundle,
 		"-case-id", "happy-path",
 		"-results-root", t.TempDir(),
@@ -124,7 +124,7 @@ func TestRunRejectsUnimplementedAdapter(t *testing.T) {
 func TestRunAcceptsClaudeAndCodexAdapterNames(t *testing.T) {
 	for _, vendor := range []string{"claude", "codex"} {
 		t.Run(vendor, func(t *testing.T) {
-			agentsDir := writeAgentSet(t, vendor, "some-model")
+			armPath := writeAgentSet(t, vendor, "some-model")
 
 			t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 			t.Setenv("OPENAI_API_KEY", "sk-test")
@@ -133,7 +133,7 @@ func TestRunAcceptsClaudeAndCodexAdapterNames(t *testing.T) {
 			err := run([]string{
 				"-repo-root", "../..",
 				"-protocol", "../../configs/protocols/pilot-v1.yaml",
-				"-agents", agentsDir,
+				"-agents", armPath,
 				"-bundle", happyPathBundle,
 				"-case-id", "happy-path",
 				"-results-root", t.TempDir(),
@@ -149,19 +149,17 @@ func TestRunAcceptsClaudeAndCodexAdapterNames(t *testing.T) {
 	}
 }
 
-// writeAgentSet builds a throwaway agent set naming one vendor for all three
-// stages. The vendor binding now lives outside the protocol, so tests that
-// exercise adapter selection vary this rather than the protocol file.
+// writeAgentSet builds a throwaway one-file arm naming one vendor for all
+// three stages. The vendor binding lives outside the protocol, so tests
+// that exercise adapter selection vary this rather than the protocol file.
 func writeAgentSet(t *testing.T, adapter, model string) string {
 	t.Helper()
-	dir := t.TempDir()
-	for _, stage := range []string{"reasoner-1", "reasoner-2", "reasoner-3"} {
-		content := "adapter: " + adapter + "\nmodel: " + model + "\nreasoning_level: standard\n"
-		if err := os.WriteFile(filepath.Join(dir, stage+".yaml"), []byte(content), 0o644); err != nil {
-			t.Fatalf("setup: %v", err)
-		}
+	path := filepath.Join(t.TempDir(), "arm.yaml")
+	content := "adapter: " + adapter + "\nmodel: " + model + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
 	}
-	return dir
+	return path
 }
 
 // TestDefaultWorkspaceRootIsOutsideTheRepository pins a boundary, not a

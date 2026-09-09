@@ -15,19 +15,20 @@ import (
 // specific budget, so a test can vary one bound and see it enforced.
 func agentSetWithBudget(t *testing.T, budgetYAML string) string {
 	t.Helper()
-	dir := t.TempDir()
-	for _, stage := range stageOrder {
-		body := "adapter: fixture\nmodel: fixture-model\nreasoning_level: standard\n" + budgetYAML
-		if err := os.WriteFile(filepath.Join(dir, string(stage)+".yaml"), []byte(body), 0o644); err != nil {
-			t.Fatalf("setup: %v", err)
-		}
+	path := filepath.Join(t.TempDir(), "arm.yaml")
+	// One arm file: the budget is stated once at the top and inherited by
+	// every stage, which is exactly the inheritance these tests should be
+	// exercising alongside the bound itself.
+	body := "adapter: fixture\nmodel: fixture-model\nreasoning_level: fixture-effort\n" + budgetYAML
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
 	}
-	return dir
+	return path
 }
 
-func orchWithAgents(t *testing.T, agentsDir string, warn func(string)) *Orchestrator {
+func orchWithAgents(t *testing.T, agentSetPath string, warn func(string)) *Orchestrator {
 	t.Helper()
-	set, err := LoadAgentSet(agentsDir)
+	set, err := LoadAgentSet(agentSetPath)
 	if err != nil {
 		t.Fatalf("LoadAgentSet: %v", err)
 	}
@@ -35,7 +36,7 @@ func orchWithAgents(t *testing.T, agentsDir string, warn func(string)) *Orchestr
 		RepoRoot:      repoRoot,
 		ProtocolPath:  pilotV1Path,
 		Protocol:      loadPilotV1(t),
-		AgentsDir:     agentsDir,
+		AgentSetPath:  agentSetPath,
 		AgentSet:      set,
 		Adapters:      map[string]adapters.AgentAdapter{"fixture": newFixtureAdapter(t)},
 		WorkspaceRoot: t.TempDir(),
@@ -53,8 +54,8 @@ func orchWithAgents(t *testing.T, agentsDir string, warn func(string)) *Orchestr
 // else gives up. The "timeout" fixture scenario sleeps 30s; a 1s budget must
 // end it in about a second.
 func TestWallClockBudgetActuallyStopsAHangingStage(t *testing.T) {
-	agentsDir := agentSetWithBudget(t, "budget:\n  max_wall_clock_seconds: 1\n")
-	o := orchWithAgents(t, agentsDir, nil)
+	armPath := agentSetWithBudget(t, "budget:\n  max_wall_clock_seconds: 1\n")
+	o := orchWithAgents(t, armPath, nil)
 
 	started := time.Now()
 	outcome, err := o.Run(context.Background(), "run-timeout", "timeout", happyPathBundle)
@@ -77,8 +78,8 @@ func TestWallClockBudgetActuallyStopsAHangingStage(t *testing.T) {
 // TestNoWallClockBudgetMeansNoDeadline: a zero bound must not silently
 // become an immediate timeout.
 func TestNoWallClockBudgetMeansNoDeadline(t *testing.T) {
-	agentsDir := agentSetWithBudget(t, "budget:\n  max_cost_usd: 1.0\n")
-	o := orchWithAgents(t, agentsDir, nil)
+	armPath := agentSetWithBudget(t, "budget:\n  max_cost_usd: 1.0\n")
+	o := orchWithAgents(t, armPath, nil)
 
 	outcome, err := o.Run(context.Background(), "run-nodeadline", "happy-path", happyPathBundle)
 	if err != nil {
@@ -93,8 +94,8 @@ func TestNoWallClockBudgetMeansNoDeadline(t *testing.T) {
 // on either CLI, so they can only be checked after the fact. The happy-path
 // fixture reports 950 output tokens for reasoner-1; a 100 bound must fail it.
 func TestUsageOverrunFailsTheStage(t *testing.T) {
-	agentsDir := agentSetWithBudget(t, "budget:\n  max_output_tokens: 100\n")
-	o := orchWithAgents(t, agentsDir, nil)
+	armPath := agentSetWithBudget(t, "budget:\n  max_output_tokens: 100\n")
+	o := orchWithAgents(t, armPath, nil)
 
 	outcome, err := o.Run(context.Background(), "run-overrun", "happy-path", happyPathBundle)
 	if err == nil {
@@ -107,8 +108,8 @@ func TestUsageOverrunFailsTheStage(t *testing.T) {
 
 // TestUsageWithinBudgetPasses guards the check from being trivially strict.
 func TestUsageWithinBudgetPasses(t *testing.T) {
-	agentsDir := agentSetWithBudget(t, "budget:\n  max_output_tokens: 5000\n  max_tool_calls: 50\n  max_cost_usd: 10.0\n")
-	o := orchWithAgents(t, agentsDir, nil)
+	armPath := agentSetWithBudget(t, "budget:\n  max_output_tokens: 5000\n  max_tool_calls: 50\n  max_cost_usd: 10.0\n")
+	o := orchWithAgents(t, armPath, nil)
 
 	outcome, err := o.Run(context.Background(), "run-within", "happy-path", happyPathBundle)
 	if err != nil {
@@ -175,8 +176,8 @@ func TestCheckUsageAgainstBudget(t *testing.T) {
 // look stronger than they are.
 func TestUnavailableUsageWarnsRatherThanPassingSilently(t *testing.T) {
 	var warnings []string
-	agentsDir := agentSetWithBudget(t, "budget:\n  max_output_tokens: 5000\n")
-	o := orchWithAgents(t, agentsDir, func(msg string) { warnings = append(warnings, msg) })
+	armPath := agentSetWithBudget(t, "budget:\n  max_output_tokens: 5000\n")
+	o := orchWithAgents(t, armPath, func(msg string) { warnings = append(warnings, msg) })
 
 	// "no-usage" reports zero usage across the board, as codex does today.
 	if _, err := o.Run(context.Background(), "run-nousage", "no-usage", happyPathBundle); err != nil {
@@ -200,8 +201,8 @@ func TestCancelledRunDoesNotRetry(t *testing.T) {
 	// No wall-clock bound, so cancellation is the only thing that can end
 	// this run: a second attempt would prove the bug rather than a timeout.
 	// The "timeout" scenario sleeps 30s, leaving room to cancel mid-flight.
-	agentsDir := agentSetWithBudget(t, "budget:\n  max_cost_usd: 1.0\n")
-	o := orchWithAgents(t, agentsDir, nil)
+	armPath := agentSetWithBudget(t, "budget:\n  max_cost_usd: 1.0\n")
+	o := orchWithAgents(t, armPath, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {

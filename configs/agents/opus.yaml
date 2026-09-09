@@ -1,0 +1,52 @@
+# Vendor binding for the real pilot-v1 cohort: claude, opus-5.
+#
+# ONE FILE PER ARM. Everything shared by the three stages is stated once
+# here; only the budgets, which genuinely differ per stage, are repeated
+# below. A new arm is a copy of this file with the model line changed.
+#
+# This names no prompts, handoffs or stopping rules - those are the
+# experiment, and live in configs/protocols/. The same frozen cohort runs
+# through any arm without minting a new protocol_version:
+#
+#   bench -protocol configs/protocols/pilot-v1.yaml -agents configs/agents/opus.yaml ...
+#
+# Both this file and the protocol are hashed into every run's fingerprints,
+# so a result records which experiment AND which binding produced it.
+
+adapter: claude
+model: claude-opus-5
+
+# low | medium | high | xhigh | max, verified against `claude --help`.
+# Note "standard" is NOT a valid level.
+reasoning_level: high
+
+stages:
+  # Discovery reads the diff plus surrounding code and is asked for recall,
+  # so it gets the widest tool-call allowance of the three.
+  reasoner-1:
+    budget:
+      max_input_tokens: 400000
+      max_output_tokens: 32000
+      max_wall_clock_seconds: 900
+      max_tool_calls: 60
+      max_cost_usd: 4.00
+
+  # Evidence also receives review-a as a handoff, and builds causal chains,
+  # so it reads more and calls more tools than discovery.
+  reasoner-2:
+    budget:
+      max_input_tokens: 500000
+      max_output_tokens: 32000
+      max_wall_clock_seconds: 900
+      max_tool_calls: 80
+      max_cost_usd: 5.00
+
+  # Verification receives both handoffs but is asked to adjudicate rather
+  # than explore, so its output allowance is smaller.
+  reasoner-3:
+    budget:
+      max_input_tokens: 500000
+      max_output_tokens: 24000
+      max_wall_clock_seconds: 900
+      max_tool_calls: 60
+      max_cost_usd: 4.00

@@ -82,11 +82,11 @@ type Orchestrator struct {
 
 	Protocol *Protocol
 
-	// AgentsDir is the directory AgentSet was loaded from. Its files are
+	// AgentSetPath is the file AgentSet was loaded from. It is
 	// hashed into every run's fingerprints, so a result records the vendor
 	// binding that produced it as precisely as it records the protocol.
-	AgentsDir string
-	AgentSet  AgentSet
+	AgentSetPath string
+	AgentSet     AgentSet
 
 	// Adapters is keyed by adapter name, not by stage: an agent set may
 	// bind different stages to different vendors, and each distinct vendor
@@ -118,7 +118,7 @@ type Options struct {
 	RepoRoot      string
 	ProtocolPath  string
 	Protocol      *Protocol
-	AgentsDir     string
+	AgentSetPath  string
 	AgentSet      AgentSet
 	Adapters      map[string]adapters.AgentAdapter
 	WorkspaceRoot string
@@ -145,7 +145,7 @@ func New(opts Options) (*Orchestrator, error) {
 		RepoRoot:     opts.RepoRoot,
 		ProtocolPath: opts.ProtocolPath,
 		Protocol:     opts.Protocol,
-		AgentsDir:    opts.AgentsDir,
+		AgentSetPath: opts.AgentSetPath,
 		AgentSet:     opts.AgentSet,
 		Adapters:     opts.Adapters,
 		Builder:      contextbuilder.New(),
@@ -182,7 +182,7 @@ func (o *Orchestrator) Run(ctx context.Context, runID, caseID, bundleRoot string
 	// record still says which protocol, prompts and schemas were in play
 	// when it was rejected. Validation's diagnosis stays the reported
 	// error either way - it is the more actionable one.
-	fp, fpErr := computeStaticFingerprints(o.ProtocolPath, o.AgentsDir, o.RepoRoot, bundleRoot, o.Protocol)
+	fp, fpErr := computeStaticFingerprints(o.ProtocolPath, o.AgentSetPath, o.RepoRoot, bundleRoot, o.Protocol)
 	if fpErr == nil {
 		outcome.Fingerprints = fp
 	}

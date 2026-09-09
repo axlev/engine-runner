@@ -1,0 +1,46 @@
+# Vendor binding: claude, haiku-4.5. The cheap arm.
+#
+# Two uses, both legitimate:
+#
+#   1. Debugging the pipeline. Handoffs, envelope stamping, schema
+#      validation and budget detection exercise the same code paths
+#      whatever model answers, so paying opus rates to find a mount bug is
+#      waste. A complete three-stage run on this arm cost $0.19.
+#
+#   2. The cheap end of the cost curve. Milestone 4's exit criterion is
+#      "cost per incremental benefit", which cannot be reported from a
+#      single price point - it needs at least two arms.
+#
+# NOT MIXABLE WITHIN A COHORT: haiku's findings are not comparable with
+# opus's, so a cohort runs entirely on one arm. Comparing arms means
+# running the same cases through each, not interleaving them.
+
+adapter: claude
+model: claude-haiku-4-5-20251001
+reasoning_level: low
+
+stages:
+  reasoner-1:
+    budget:
+      max_input_tokens: 400000
+      max_output_tokens: 32000
+      max_wall_clock_seconds: 600
+      # Declared even though claude's envelope carries no tool-call count,
+      # so a run warns that the bound went unenforced. That warning is the
+      # feature: a limit silently skipped is worse than one openly unmet.
+      max_tool_calls: 60
+      max_cost_usd: 1.00
+  reasoner-2:
+    budget:
+      max_input_tokens: 500000
+      max_output_tokens: 32000
+      max_wall_clock_seconds: 600
+      max_tool_calls: 80
+      max_cost_usd: 1.00
+  reasoner-3:
+    budget:
+      max_input_tokens: 500000
+      max_output_tokens: 24000
+      max_wall_clock_seconds: 600
+      max_tool_calls: 60
+      max_cost_usd: 1.00

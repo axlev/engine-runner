@@ -146,9 +146,14 @@ Known gaps, deliberately left open:
   (the output-dir ownership bug, since fixed), and the run was interrupted
   before reaching reasoner-2. So: one stage proven end to end, no complete
   three-stage run yet, and resource limits still unexercised.
-- `configs/agents/` is therefore closer to runnable than it was, but no live
-  vendor run has happened. `fixtures/agents/` remains the smoke-test binding
-  and needs no daemon.
+- The full three-stage pipeline HAS now run live and completed, on
+  `configs/agents/haiku.yaml`, against the synthetic bundle: both handoffs
+  correct, no contamination, $0.19-$0.20 per run. `configs/agents/sonnet.yaml`
+  and `opus.yaml` exist but have never been run, and their budgets are
+  informed estimates from the haiku numbers, not measurements.
+- An agent set is ONE FILE PER ARM (`-agents configs/agents/opus.yaml`), not
+  a directory of per-stage files. Shared binding at the top, per-stage
+  budgets below.
 - `cmd/bench` shells out to `docker` as the calling user. Where the socket
   requires `sudo`, a live run fails on permission denied regardless of the
   image. `DockerRunner.DockerPath` is injectable but `bench` exposes no flag

@@ -16,7 +16,7 @@ const (
 	pilotV1Path      = "../../configs/protocols/pilot-v1.yaml"
 	happyPathBundle  = "../../fixtures/cases/happy-path/prospective"
 	fixturesRootPath = "../../fixtures"
-	fixtureAgentsDir = "../../fixtures/agents"
+	fixtureAgentsDir = "../../fixtures/agents/fixture.yaml"
 )
 
 func loadFixtureAgents(t *testing.T) AgentSet {
@@ -36,7 +36,7 @@ func newOrch(t *testing.T, protocol *Protocol, adapter adapters.AgentAdapter, wo
 		RepoRoot:      repoRoot,
 		ProtocolPath:  pilotV1Path,
 		Protocol:      protocol,
-		AgentsDir:     fixtureAgentsDir,
+		AgentSetPath:  fixtureAgentsDir,
 		AgentSet:      loadFixtureAgents(t),
 		Adapters:      map[string]adapters.AgentAdapter{"fixture": adapter},
 		WorkspaceRoot: workspaceRoot,

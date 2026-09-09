@@ -42,7 +42,7 @@ type config struct {
 	workspaceRoot string
 	resultsRoot   string
 	adapterImage  string
-	agentsDir     string
+	agentSetPath  string
 }
 
 func parseArgs(args []string) (config, error) {
@@ -57,7 +57,7 @@ func parseArgs(args []string) (config, error) {
 	fs.StringVar(&cfg.workspaceRoot, "workspace-root", defaultWorkspaceRoot(), "root under which fresh per-attempt workspace directories are created; must be outside the repository, since it is bind-mounted into stage containers")
 	fs.StringVar(&cfg.resultsRoot, "results-root", "build/results", "root under which the sealed run directory is written")
 	fs.StringVar(&cfg.adapterImage, "adapter-image", "", "container image to run the vendor CLI in, used when an agent config names \"claude\" or \"codex\"")
-	fs.StringVar(&cfg.agentsDir, "agents", "fixtures/agents", "directory of per-stage agent configs (the vendor binding: adapter, model, effort, budget). Use configs/agents for a real vendor run")
+	fs.StringVar(&cfg.agentSetPath, "agents", "fixtures/agents/fixture.yaml", "agent set file: the vendor binding (adapter, model, effort, per-stage budgets) for one arm. One file per arm - see configs/agents/")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -148,7 +148,7 @@ func run(args []string, stdout io.Writer) error {
 		return fmt.Errorf("loading protocol: %w", err)
 	}
 
-	agentSet, err := orchestrator.LoadAgentSet(cfg.agentsDir)
+	agentSet, err := orchestrator.LoadAgentSet(cfg.agentSetPath)
 	if err != nil {
 		return fmt.Errorf("loading agent set: %w", err)
 	}
@@ -162,7 +162,7 @@ func run(args []string, stdout io.Writer) error {
 		RepoRoot:      cfg.repoRoot,
 		ProtocolPath:  cfg.protocolPath,
 		Protocol:      protocol,
-		AgentsDir:     cfg.agentsDir,
+		AgentSetPath:  cfg.agentSetPath,
 		AgentSet:      agentSet,
 		Adapters:      built,
 		WorkspaceRoot: cfg.workspaceRoot,
