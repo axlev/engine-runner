@@ -146,9 +146,15 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 		return base, withStderr(fmt.Errorf("claude: %w", parseErr), result.Stderr)
 	}
 	base.Usage = adapters.Usage{
-		InputTokens:  resp.Usage.InputTokens,
+		InputTokens:  resp.TotalInputTokens(),
 		OutputTokens: resp.Usage.OutputTokens,
 		CostUSD:      resp.TotalCostUSD,
+		// Deliberately NOT populated: claude's envelope carries no
+		// tool-call count. num_turns is the nearest field but counts
+		// assistant turns, not tool calls, and mapping one to the other
+		// would be a fabricated number in a budget check. Left zero, and
+		// checkUsageAgainstBudget now reports max_tool_calls as
+		// uncheckable rather than passing it against a phantom 0.
 	}
 	if resp.IsError {
 		return base, fmt.Errorf("claude: %s", resp.Result)

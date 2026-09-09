@@ -231,3 +231,62 @@ func TestCancelledRunDoesNotRetry(t *testing.T) {
 		t.Errorf("reasoner-1 recorded %d attempts, want exactly 1: a cancelled run must not open another vendor call", attempts)
 	}
 }
+
+// TestPartiallyReportedUsageIsNotSilentlyPassed is the finer-grained half of
+// the "honestly labelled unenforced" rule. The original check only fired
+// when an adapter reported NOTHING, which missed the commoner case seen on
+// the first live run: claude reports tokens and cost but carries no
+// tool-call count, so max_tool_calls was compared against a phantom 0 and
+// passed vacuously.
+func TestPartiallyReportedUsageIsNotSilentlyPassed(t *testing.T) {
+	budget := BudgetConfig{
+		MaxInputTokens:  120000,
+		MaxOutputTokens: 8000,
+		MaxToolCalls:    60, // declared, but claude never reports it
+		MaxCostUSD:      2.0,
+	}
+	// A realistic live claude result: tokens and cost present, tool calls absent.
+	usage := adapters.Usage{InputTokens: 20424, OutputTokens: 3000, CostUSD: 0.09}
+
+	err, unavailable := checkUsageAgainstBudget("claude", budget, usage)
+	if err != nil {
+		t.Fatalf("nothing exceeded its bound, got error: %v", err)
+	}
+	if unavailable == nil {
+		t.Fatalf("max_tool_calls was checked against an unreported 0 and passed silently")
+	}
+	if len(unavailable.Bounds) != 1 || unavailable.Bounds[0] != "max_tool_calls" {
+		t.Errorf("Bounds = %v, want exactly [max_tool_calls]: the reported bounds were genuinely checked", unavailable.Bounds)
+	}
+}
+
+// A bound that IS reported and IS exceeded must still fail, even while a
+// different bound is unavailable - the warning must not mask the error.
+func TestOverrunStillFailsWhenAnotherBoundIsUnavailable(t *testing.T) {
+	budget := BudgetConfig{MaxOutputTokens: 8000, MaxToolCalls: 60}
+	usage := adapters.Usage{OutputTokens: 11641} // tool calls unreported
+
+	err, _ := checkUsageAgainstBudget("claude", budget, usage)
+	if err == nil {
+		t.Fatalf("expected the output-token overrun to fail the stage")
+	}
+	if !strings.Contains(err.Error(), "max_output_tokens") {
+		t.Errorf("error = %q, want it to name the bound that was exceeded", err)
+	}
+}
+
+// Undeclared bounds must not be reported as unavailable: a bound nobody set
+// is not a bound that went unchecked, and noise here would train operators
+// to ignore the warning.
+func TestUndeclaredBoundsAreNotReportedUnavailable(t *testing.T) {
+	budget := BudgetConfig{MaxOutputTokens: 8000} // only one bound declared
+	usage := adapters.Usage{OutputTokens: 3000}
+
+	err, unavailable := checkUsageAgainstBudget("claude", budget, usage)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if unavailable != nil {
+		t.Errorf("unavailable = %v, want nil: only max_output_tokens was declared and it was checked", unavailable.Bounds)
+	}
+}

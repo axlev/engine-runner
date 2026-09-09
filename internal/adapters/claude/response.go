@@ -19,7 +19,22 @@ type response struct {
 	SessionID    string  `json:"session_id"`
 	NumTurns     int     `json:"num_turns"`
 	Usage        struct {
-		InputTokens  int `json:"input_tokens"`
+		// input_tokens counts ONLY the uncached remainder. With prompt
+		// caching on - which Claude Code does by default - almost all of a
+		// stage's input arrives as cache reads or cache writes, so this
+		// field alone is wildly misleading: a real run reported
+		// input_tokens=10 against cache_read=13615 and cache_creation=6799.
+		// Budgeting on input_tokens alone made max_input_tokens dead, since
+		// 10 never approaches a 120000 bound. TotalInputTokens sums all
+		// three, which is what the bound is actually about.
+		InputTokens              int `json:"input_tokens"`
+		CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+		CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+
+		// output_tokens covers everything the model generated across the
+		// whole session - every tool-using turn and its thinking - not just
+		// the final review document. A 1.5KB review can legitimately report
+		// 10k output tokens.
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`
 }
@@ -35,4 +50,14 @@ func parseResponse(stdout []byte) (response, error) {
 		return response{}, fmt.Errorf("claude: parsing response JSON: %w", err)
 	}
 	return r, nil
+}
+
+// TotalInputTokens is every input token the stage was billed for: the
+// uncached remainder plus cache writes plus cache reads. Cached input is
+// cheaper, not free, and it is still context the model consumed - so a
+// bound on "how much input did this stage take" must count all of it.
+func (r response) TotalInputTokens() int {
+	return r.Usage.InputTokens +
+		r.Usage.CacheCreationInputTokens +
+		r.Usage.CacheReadInputTokens
 }

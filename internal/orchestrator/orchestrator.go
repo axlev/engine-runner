@@ -16,6 +16,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -260,6 +261,17 @@ func (o *Orchestrator) runStageWithRetries(
 	agentCfg := o.AgentSet[stage]
 	adapter := o.Adapters[agentCfg.Adapter]
 
+	// Read once per stage rather than per attempt: the file cannot change
+	// mid-stage, and a read failure should not be discovered on a retry.
+	// Non-fatal - an adapter that cannot use it ignores it, and the
+	// caller's own validation is unaffected either way.
+	schemaJSON, schemaErr := os.ReadFile(filepath.Join(o.RepoRoot, stageProto.OutputSchema))
+	if schemaErr != nil {
+		o.warnf("stage %s: could not read %s to hand to the vendor (%v); the stage still runs and its output is still validated",
+			stage, stageProto.OutputSchema, schemaErr)
+		schemaJSON = nil
+	}
+
 	var records []StageAttemptRecord
 	var lastErr error
 
@@ -275,15 +287,16 @@ func (o *Orchestrator) runStageWithRetries(
 		}
 
 		req := adapters.RunRequest{
-			RunID:          runID,
-			CaseID:         caseID,
-			Stage:          stage,
-			WorkspacePath:  stageCtx.WorkspacePath,
-			PromptPath:     stageCtx.PromptPath,
-			OutputSchema:   stageProto.OutputSchema,
-			Model:          agentCfg.Model,
-			ReasoningLevel: agentCfg.ReasoningLevel,
-			Budget:         agentCfg.Budget.toAdapterBudget(),
+			RunID:            runID,
+			CaseID:           caseID,
+			Stage:            stage,
+			WorkspacePath:    stageCtx.WorkspacePath,
+			PromptPath:       stageCtx.PromptPath,
+			OutputSchema:     stageProto.OutputSchema,
+			OutputSchemaJSON: schemaJSON,
+			Model:            agentCfg.Model,
+			ReasoningLevel:   agentCfg.ReasoningLevel,
+			Budget:           agentCfg.Budget.toAdapterBudget(),
 			Environment: map[string]string{
 				adapters.AttemptEnvKey: strconv.Itoa(attempt),
 			},
@@ -341,8 +354,9 @@ func (o *Orchestrator) runStageWithRetries(
 		} else if unavailable != nil {
 			// Not a failure - but it must not pass silently either, or a
 			// bound enforced on one vendor looks enforced on all of them.
-			o.warnf("stage %s attempt %d: adapter %q reported no usage, so %v could not be checked",
-				stage, attempt, unavailable.Adapter, unavailable.Bounds)
+			o.warnf("stage %s attempt %d: adapter %q did not report %v, so %s unenforced this attempt",
+				stage, attempt, unavailable.Adapter, unavailable.Bounds,
+				plural(len(unavailable.Bounds), "that bound was", "those bounds were"))
 		}
 
 		// The reasoner authors content; the engine supplies identity. This
@@ -367,4 +381,14 @@ func (o *Orchestrator) runStageWithRetries(
 	}
 
 	return "", records, fmt.Errorf("stage %s failed after %d attempt(s), last error: %w", stage, o.Protocol.RetryPolicy.MaxAttempts, lastErr)
+}
+
+// plural picks between two phrasings. Worth the three lines: this string is
+// an operator-facing warning about an unenforced budget bound, and "1 bounds
+// were unenforced" reads like a bug in the warning rather than a real gap.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }

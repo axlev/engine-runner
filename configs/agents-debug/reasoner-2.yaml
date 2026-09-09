@@ -22,11 +22,29 @@ model: claude-haiku-4-5-20251001
 reasoning_level: low
 
 budget:
-  # Ceilings kept close to the real binding's shape so budget handling is
-  # exercised realistically, but cost is cut hard: a debug run that somehow
-  # burns real money defeats the purpose of using a cheap model.
-  max_input_tokens: 120000
-  max_output_tokens: 8000
+  # MEASUREMENT VALUES, not real bounds. The first live run showed the
+  # original guesses were calibrated against the wrong quantities:
+  #
+  #   output_tokens covers everything generated across the whole session -
+  #   every tool-using turn and its thinking - not the final review. A 1.5KB
+  #   review legitimately reported 10303 output tokens against an 8000
+  #   "limit", failing a stage that had done nothing wrong.
+  #
+  #   input_tokens now includes cache reads and writes (claude reports the
+  #   uncached remainder separately, and it is tiny - 10 against a 13615
+  #   cache read). Cache reads accumulate PER TURN, so a multi-turn stage
+  #   can bill far more input than its context ever held.
+  #
+  # Deliberately set high enough not to trip, so a debug run measures what a
+  # stage actually consumes instead of failing on a guess. Calibrate the
+  # real cohort from these numbers, not from intuition.
+  max_input_tokens: 2000000
+  max_output_tokens: 100000
   max_wall_clock_seconds: 600
-  max_tool_calls: 40
-  max_cost_usd: 0.25
+
+  # Left declared even though claude's envelope has no tool-call count: the
+  # run should WARN that it could not be checked. That warning is the
+  # feature, and a debug run is where it should be seen.
+  max_tool_calls: 60
+
+  max_cost_usd: 1.00

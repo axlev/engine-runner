@@ -78,6 +78,20 @@ type RunRequest struct {
 	// satisfy. Validation is performed by the caller, not the adapter.
 	OutputSchema string `json:"output_schema"`
 
+	// OutputSchemaJSON is that schema's actual bytes, supplied so an
+	// adapter can hand the contract to a vendor that supports structured
+	// output (claude's --json-schema). Adapters whose vendor has no such
+	// facility ignore it.
+	//
+	// Content rather than a path because the adapter has no repo root to
+	// resolve against, and json:"-" because request.json is a frozen
+	// artifact: embedding a copy of a schema that is already fingerprinted
+	// by name would bloat every result and create a second place for the
+	// same bytes to drift. Handing the schema to the vendor never replaces
+	// the caller's own validation - it only reduces the odds of a stage
+	// failing on formatting rather than on substance.
+	OutputSchemaJSON []byte `json:"-"`
+
 	Model          string `json:"model"`
 	ReasoningLevel string `json:"reasoning_level,omitempty"`
 	Budget         Budget `json:"budget"`

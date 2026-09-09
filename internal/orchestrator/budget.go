@@ -60,33 +60,45 @@ func checkUsageAgainstBudget(adapterName string, budget BudgetConfig, usage adap
 	}
 	order := []string{"max_input_tokens", "max_output_tokens", "max_tool_calls"}
 
-	nothingReported := usage.InputTokens == 0 && usage.OutputTokens == 0 &&
-		usage.ToolCalls == 0 && usage.CostUSD == 0
-
-	if nothingReported {
-		var unbounded []string
-		for _, name := range order {
-			if declared[name] > 0 {
-				unbounded = append(unbounded, name)
-			}
-		}
-		if budget.MaxCostUSD > 0 {
-			unbounded = append(unbounded, "max_cost_usd")
-		}
-		if len(unbounded) == 0 {
-			return nil, nil
-		}
-		return nil, &UsageUnavailable{Adapter: adapterName, Bounds: unbounded}
-	}
-
+	// Unavailability is judged PER BOUND, not for the usage block as a
+	// whole. The original all-or-nothing test only fired when an adapter
+	// reported nothing at all, which missed the commoner and more dangerous
+	// case: an adapter that reports some fields and not others. claude
+	// reports tokens and cost but has no tool-call count in its envelope,
+	// so max_tool_calls was being compared against a phantom 0 and passing
+	// vacuously - a declared bound that silently enforced nothing, which is
+	// exactly what this function exists to prevent.
+	//
+	// A zero here means "not reported" rather than "genuinely zero". That
+	// conflation is safe in this direction: a stage that truly consumed
+	// zero of something cannot have exceeded a positive bound, so the worst
+	// case is an unnecessary warning, never a missed overrun.
+	var unavailable []string
 	for _, name := range order {
 		limit := declared[name]
-		if limit > 0 && reported[name] > limit {
+		if limit <= 0 {
+			continue // no bound declared, nothing to check
+		}
+		if reported[name] == 0 {
+			unavailable = append(unavailable, name)
+			continue
+		}
+		if reported[name] > limit {
 			return fmt.Errorf("exceeded %s: used %d, limit %d", name, reported[name], limit), nil
 		}
 	}
-	if budget.MaxCostUSD > 0 && usage.CostUSD > budget.MaxCostUSD {
-		return fmt.Errorf("exceeded max_cost_usd: used %.4f, limit %.4f", usage.CostUSD, budget.MaxCostUSD), nil
+
+	if budget.MaxCostUSD > 0 {
+		switch {
+		case usage.CostUSD == 0:
+			unavailable = append(unavailable, "max_cost_usd")
+		case usage.CostUSD > budget.MaxCostUSD:
+			return fmt.Errorf("exceeded max_cost_usd: used %.4f, limit %.4f", usage.CostUSD, budget.MaxCostUSD), nil
+		}
+	}
+
+	if len(unavailable) > 0 {
+		return nil, &UsageUnavailable{Adapter: adapterName, Bounds: unavailable}
 	}
 	return nil, nil
 }
