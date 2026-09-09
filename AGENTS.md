@@ -116,6 +116,32 @@ weaken them need an explicit design decision, not a quiet refactor.
   this to the base tree without raising it explicitly — it would invalidate every bundle the
   miner has produced.
 
+## Fixture case language
+
+New synthetic cases are written in **C** in the idiom of an embedded network
+operating system - FRR's vocabulary: `struct stream`, `STREAM_GETC`,
+`XMALLOC`/`XFREE` with an MTYPE, `zlog_err`, vty handlers. That is the code
+this benchmark exists to review, and it is where the defect classes worth
+measuring live: unvalidated TLV lengths, reads past a stream end, integer
+truncation in a length field, use-after-free on a teardown path.
+
+Two rules follow from it.
+
+- **Write code in FRR's idiom, never code derived from FRR.** Invent the
+  daemon and function names. Real FRR routines and their CVEs are
+  well-documented and widely mirrored, so a model may recognise a memorised
+  defect instead of analysing the diff - scoring well while proving nothing.
+  The boundary validator cannot detect that: the leak is in the model's
+  weights, not in the bundle.
+- **Ground truth is a sanitizer trace, not a claim.** Build the reviewer's
+  own snapshot under `-fsanitize=address,undefined` from `<case>/oracle/`
+  and let the run prove both directions - that the real defect faults, and
+  that the plausible-but-unreachable one does not. `fixtures/cases/tlv-bounds`
+  is the worked example.
+
+C sources are invisible to `go build ./...`, so the `//go:build ignore` tag
+and the nested-`go.mod` trick used by the older Go fixtures are unnecessary.
+
 ## Working conventions
 
 - Go 1.26. Run `go build ./... && go vet ./... && go test ./... && gofmt -l .`

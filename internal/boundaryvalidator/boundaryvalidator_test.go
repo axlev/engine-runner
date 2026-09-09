@@ -486,3 +486,17 @@ func TestFalsePositiveBundlePasses(t *testing.T) {
 		t.Fatalf("the false-positive bundle must pass: %s", r.Summary())
 	}
 }
+
+// TestTLVBoundsBundlePasses: the C fixture bundle must satisfy the validator
+// before anything is built on it. C sources also exercise a path the Go
+// fixtures never did - a bundle whose snapshot carries headers and a
+// directory layout unlike this repository's own.
+func TestTLVBoundsBundlePasses(t *testing.T) {
+	r, err := Validate("tlv-bounds", "../../fixtures/cases/tlv-bounds/prospective")
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if !r.Passed() {
+		t.Fatalf("the tlv-bounds bundle must pass: %s", r.Summary())
+	}
+}

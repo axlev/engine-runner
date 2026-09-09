@@ -104,3 +104,29 @@ func TestFalsePositiveGroundTruthHolds(t *testing.T) {
 		t.Fatalf("the case's ground truth no longer holds:\n%s", out)
 	}
 }
+
+// TestTLVBoundsGroundTruthHolds runs the C case's oracle, which compiles the
+// reviewer's own snapshot under AddressSanitizer and proves BOTH directions:
+// the area-address TLV really does read past the end of the stream buffer,
+// and the handler-table index really cannot go out of range. Ground truth is
+// a sanitizer trace rather than an assertion in a comment.
+//
+// Skips rather than fails without a C toolchain: the engine's own tests must
+// not require one.
+func TestTLVBoundsGroundTruthHolds(t *testing.T) {
+	if _, err := exec.LookPath("gcc"); err != nil {
+		t.Skip("no C toolchain; the oracle needs gcc with -fsanitize=address")
+	}
+	cmd := exec.Command("./run.sh")
+	cmd.Dir = "../../fixtures/cases/tlv-bounds/oracle"
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the case's ground truth no longer holds:\n%s", out)
+	}
+	if !strings.Contains(string(out), "heap-buffer-overflow") {
+		t.Errorf("expected an ASan heap-buffer-overflow to prove the real defect:\n%s", out)
+	}
+	if !strings.Contains(string(out), "all 256 type octets dispatched") {
+		t.Errorf("expected the dispatch table to be shown total:\n%s", out)
+	}
+}

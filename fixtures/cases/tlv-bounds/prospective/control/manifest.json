@@ -1,0 +1,7 @@
+{
+  "schema_version": "engine-manifest/v1",
+  "case_id": "tlv-bounds",
+  "base_commit": "3333333333333333333333333333333333333333",
+  "cutoff_commit": "4444444444444444444444444444444444444444",
+  "snapshot_format": "directory-snapshot/v1"
+}

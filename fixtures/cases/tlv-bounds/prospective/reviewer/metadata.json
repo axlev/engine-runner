@@ -1,0 +1,7 @@
+{
+  "schema_version": "reviewer-metadata/v1",
+  "repository": "example/rpdd",
+  "title": "rpdd: dispatch TLV decoding through a handler table and add area-address parsing",
+  "description": "Replaces the inline switch in rpd_tlv_parse with a per-type handler table, and adds a handler for the area-address TLV.",
+  "cutoff_timestamp": "2026-02-01T00:00:00Z"
+}
