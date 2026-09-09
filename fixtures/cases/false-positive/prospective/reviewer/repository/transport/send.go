@@ -1,5 +1,3 @@
-//go:build ignore
-
 // Package transport writes framed payloads to a connection.
 package transport
 
@@ -7,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"example.com/widget/internal/frame"
+	"example.com/widget/frame"
 )
 
 // Send writes one framed payload.

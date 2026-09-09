@@ -1,11 +1,15 @@
-diff --git a/internal/frame/frame.go b/internal/frame/frame.go
-index 1111111..2222222 100644
---- a/internal/frame/frame.go
-+++ b/internal/frame/frame.go
-@@ -6,10 +6,20 @@ package frame
- // HeaderSize is the number of bytes prefixed to every payload.
- const HeaderSize = 1
+diff --git a/frame/frame.go b/frame/frame.go
+index 7161762..7a2bb1b 100644
+--- a/frame/frame.go
++++ b/frame/frame.go
+@@ -1,9 +1,22 @@
+-// Package frame encodes and decodes wire frames.
++// Package frame encodes and decodes length-prefixed wire frames.
+ package frame
  
++// HeaderSize is the number of bytes prefixed to every payload.
++const HeaderSize = 1
++
  // Encode frames payload for the wire.
  func Encode(payload []byte) []byte {
 -	out := make([]byte, len(payload))
@@ -24,12 +28,19 @@ index 1111111..2222222 100644
 +	n := int(b[0])
 +	return b[HeaderSize : HeaderSize+n], nil
 +}
-diff --git a/internal/transport/send.go b/internal/transport/send.go
-index 3333333..4444444 100644
---- a/internal/transport/send.go
-+++ b/internal/transport/send.go
-@@ -10,6 +10,10 @@ import (
- )
+diff --git a/transport/send.go b/transport/send.go
+index ad267ed..4616237 100644
+--- a/transport/send.go
++++ b/transport/send.go
+@@ -2,6 +2,7 @@
+ package transport
+ 
+ import (
++	"fmt"
+ 	"io"
+ 
+ 	"example.com/widget/frame"
+@@ -9,6 +10,10 @@ import (
  
  // Send writes one framed payload.
  func Send(w io.Writer, payload []byte) error {

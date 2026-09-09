@@ -1,5 +1,3 @@
-//go:build ignore
-
 // Package frame encodes and decodes length-prefixed wire frames.
 package frame
 
