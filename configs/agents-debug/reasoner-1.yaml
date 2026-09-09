@@ -1,0 +1,32 @@
+# DEBUG vendor binding for reasoner-1 (discovery).
+#
+# Same frozen experiment, cheap model. Debugging the plumbing - handoffs,
+# envelope stamping, schema validation, budget detection - exercises the
+# same code paths regardless of which model answers, so paying Opus rates
+# to find a mount bug is waste.
+#
+# Pair with the SAME protocol as a real run, so protocol_version and
+# protocol_hash are identical and only the agent-set hash differs:
+#
+#   bench -protocol configs/protocols/pilot-v1.yaml -agents configs/agents-debug ...
+#
+# NOT FOR RESULTS. A cohort run under this binding is a system test, not a
+# benchmark measurement: haiku's findings are not comparable with opus's,
+# and mixing them within a cohort would violate design principle 6.
+adapter: claude
+model: claude-haiku-4-5-20251001
+
+# low, not high: debugging cares whether a stage completes and validates,
+# not how well it reasons. Valid levels are low/medium/high/xhigh/max,
+# verified against `claude --help` - note "standard" is NOT one of them.
+reasoning_level: low
+
+budget:
+  # Ceilings kept close to the real binding's shape so budget handling is
+  # exercised realistically, but cost is cut hard: a debug run that somehow
+  # burns real money defeats the purpose of using a cheap model.
+  max_input_tokens: 120000
+  max_output_tokens: 8000
+  max_wall_clock_seconds: 600
+  max_tool_calls: 40
+  max_cost_usd: 0.25

@@ -89,11 +89,20 @@ both produce the same `protocol_version` and the same `protocol_hash`:
 
 ```bash
 # smoke test - no credentials, no network, no cost (the default)
-bench -agents fixtures/agents  -bundle ... -case-id ...
+bench -agents fixtures/agents      -bundle ... -case-id ...
+
+# debugging the plumbing against a real vendor, on a cheap model
+bench -agents configs/agents-debug -bundle ... -case-id ...
 
 # the real cohort
-bench -agents configs/agents   -bundle ... -case-id ...
+bench -agents configs/agents       -bundle ... -case-id ...
 ```
+
+`configs/agents-debug` exists because handoffs, envelope stamping, schema
+validation and budget detection exercise the same code paths whatever model
+answers — paying Opus rates to find a mount bug is waste. It is **not for
+results**: a run under it is a system test, not a measurement, and mixing
+models within a cohort would violate the frozen-protocol principle.
 
 Both the protocol and every agent config are hashed into each run's
 `fingerprints`, so a result records which experiment *and* which vendor
