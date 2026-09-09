@@ -1,0 +1,27 @@
+{
+  "summary": "Two candidate defects in the new framing code: a missing bounds check in Decode, and an apparent silent truncation in Encode.",
+  "findings": [
+    {
+      "id": "f1",
+      "title": "Decode panics on a truncated frame",
+      "description": "Decode reads the length byte and slices b[HeaderSize:HeaderSize+n] without checking that the buffer actually holds n more bytes, so a short or corrupted frame panics with slice bounds out of range.",
+      "category": "correctness",
+      "severity": "high",
+      "confidence": 0.95,
+      "evidence": [
+        { "file": "internal/frame/frame.go", "start_line": 25, "end_line": 26, "excerpt": "n := int(b[0])\nreturn b[HeaderSize : HeaderSize+n], nil" }
+      ]
+    },
+    {
+      "id": "f2",
+      "title": "Encode silently truncates payloads longer than 255 bytes",
+      "description": "Encode stores the payload length in a single byte, so any payload of 256 bytes or more has its length wrap, and the frame reports a shorter body than it carries.",
+      "category": "correctness",
+      "severity": "high",
+      "confidence": 0.7,
+      "evidence": [
+        { "file": "internal/frame/frame.go", "start_line": 14, "end_line": 14, "excerpt": "out[0] = byte(len(payload))" }
+      ]
+    }
+  ]
+}

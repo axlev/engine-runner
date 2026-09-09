@@ -1,0 +1,15 @@
+{
+  "review_b_ref": "sha256:fixture-review-b-false-positive",
+  "verdicts": [
+    {
+      "finding_id": "f1",
+      "disposition": "CONFIRMED",
+      "rationale": "Constructed the frame [0xC8, 0x01, 0x02, 0x03]: Decode reads n=200 against a 4-byte buffer and panics. The defect reproduces."
+    },
+    {
+      "finding_id": "f2",
+      "disposition": "REJECTED",
+      "rationale": "Attempted to reach Encode with an oversized payload and could not. Send is the only caller and its guard precedes every call, so the truncation is unreachable rather than merely unlikely. Encode being exported makes this fragile, but fragility is not the defect that was claimed."
+    }
+  ]
+}

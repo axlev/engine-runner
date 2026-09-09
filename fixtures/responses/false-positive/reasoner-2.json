@@ -1,0 +1,40 @@
+{
+  "review_a_ref": "sha256:fixture-review-a-false-positive",
+  "assessments": [
+    {
+      "finding_id": "f1",
+      "disposition": "CONFIRMED",
+      "causal_chain": [
+        {
+          "file": "internal/frame/frame.go",
+          "start_line": 25,
+          "end_line": 26,
+          "excerpt": "n := int(b[0])\nreturn b[HeaderSize : HeaderSize+n], nil"
+        }
+      ]
+    },
+    {
+      "finding_id": "f2",
+      "disposition": "REJECTED",
+      "causal_chain": [
+        {
+          "file": "internal/frame/limits.go",
+          "start_line": 7,
+          "end_line": 7,
+          "excerpt": "const MaxPayload = 200"
+        },
+        {
+          "file": "internal/transport/send.go",
+          "start_line": 14,
+          "end_line": 17,
+          "excerpt": "if len(payload) > frame.MaxPayload {\n\treturn fmt.Errorf(...)\n}"
+        }
+      ],
+      "rejection_reason": "Truncation cannot occur on any reachable path. Send is the only caller of Encode and rejects payloads above MaxPayload = 200, which is below the 256-byte wrap point, so byte(len(payload)) is always exact.",
+      "proposed_test": {
+        "kind": "unit_test",
+        "description": "Call transport.Send with a 300-byte payload: it returns an error and Encode is never reached."
+      }
+    }
+  ]
+}

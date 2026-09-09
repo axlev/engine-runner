@@ -1,0 +1,7 @@
+{
+  "schema_version": "reviewer-metadata/v1",
+  "repository": "example/widget-service",
+  "title": "Add length-prefixed framing with an explicit payload limit",
+  "description": "Encode now writes a one-byte length header, Decode is added to read it back, and Send validates payloads against MaxPayload before framing.",
+  "cutoff_timestamp": "2026-01-01T00:00:00Z"
+}

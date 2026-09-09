@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,5 +198,62 @@ func TestDefaultWorkspaceRootFallbackIsStillOutsideTheRepository(t *testing.T) {
 	}
 	if !filepath.IsAbs(got) || strings.HasPrefix(got, repoRoot+string(filepath.Separator)) {
 		t.Errorf("fallback defaultWorkspaceRoot() = %q, want an absolute path outside %q", got, repoRoot)
+	}
+}
+
+// TestFalsePositiveCaseExercisesSuppression covers the one thing the
+// happy-path case structurally cannot: a finding being killed. Every
+// happy-path finding is confirmed by both later stages, so before this case
+// existed the pipeline had never been shown to REJECT anything - and
+// false-positive suppression is one of the five outcomes Milestone 4's exit
+// criterion requires the results to distinguish.
+//
+// Deterministic, through the fixture adapter: the live runs that motivated
+// this cost money and gave NARROWED rather than REJECTED, which is a real
+// model disagreement rather than something to assert in a unit test.
+func TestFalsePositiveCaseExercisesSuppression(t *testing.T) {
+	resultsRoot := t.TempDir()
+	var stdout bytes.Buffer
+
+	err := run([]string{
+		"-repo-root", "../..",
+		"-protocol", "../../configs/protocols/pilot-v1.yaml",
+		"-agents", "../../fixtures/agents/fixture.yaml",
+		"-fixtures-dir", "../../fixtures",
+		"-bundle", "../../fixtures/cases/false-positive/prospective",
+		"-case-id", "false-positive",
+		"-run-id", "test-run-false-positive",
+		"-workspace-root", t.TempDir(),
+		"-results-root", resultsRoot,
+	}, &stdout)
+	if err != nil {
+		t.Fatalf("run: %v (stdout: %s)", err, stdout.String())
+	}
+
+	raw, err := os.ReadFile(filepath.Join(resultsRoot, "test-run-false-positive", "evaluation", "scores.json"))
+	if err != nil {
+		t.Fatalf("reading scores: %v", err)
+	}
+	var scores struct {
+		FindingsDiscovered int `json:"findings_discovered"`
+		RejectedByB        int `json:"rejected_by_b"`
+		RejectedByC        int `json:"rejected_by_c"`
+		ConfirmedByC       int `json:"confirmed_by_c"`
+	}
+	if err := json.Unmarshal(raw, &scores); err != nil {
+		t.Fatalf("parsing scores: %v", err)
+	}
+
+	if scores.FindingsDiscovered != 2 {
+		t.Errorf("findings_discovered = %d, want 2 (one real defect, one unreachable)", scores.FindingsDiscovered)
+	}
+	if scores.RejectedByB != 1 || scores.RejectedByC != 1 {
+		t.Errorf("rejected_by_b=%d rejected_by_c=%d, want 1 and 1: the suppression path is the point of this case",
+			scores.RejectedByB, scores.RejectedByC)
+	}
+	// The case must not reject everything either, or it would pass while
+	// measuring nothing: the real defect has to survive.
+	if scores.ConfirmedByC != 1 {
+		t.Errorf("confirmed_by_c = %d, want 1: the genuine Decode defect must survive verification", scores.ConfirmedByC)
 	}
 }

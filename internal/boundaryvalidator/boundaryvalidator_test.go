@@ -472,3 +472,17 @@ func rehashBundle(t *testing.T, bundle string) {
 		t.Fatalf("rehashing: %v", err)
 	}
 }
+
+// TestFalsePositiveBundlePasses guards the second committed case the same
+// way TestCleanBundlePasses guards the first: a fixture bundle that fails
+// its own validator is worse than no fixture, because every test built on
+// it then fails for the wrong reason.
+func TestFalsePositiveBundlePasses(t *testing.T) {
+	r, err := Validate("false-positive", "../../fixtures/cases/false-positive/prospective")
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if !r.Passed() {
+		t.Fatalf("the false-positive bundle must pass: %s", r.Summary())
+	}
+}

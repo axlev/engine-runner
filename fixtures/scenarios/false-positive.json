@@ -1,0 +1,18 @@
+{
+  "name": "false-positive",
+  "description": "Discovery raises one real defect and one plausible-but-unreachable one; evidence and verification both REJECT the second. Exercises the false-positive suppression path, which the happy-path scenario never touches because every finding there is confirmed.",
+  "stages": {
+    "reasoner-1": {
+      "usage": { "input_tokens": 9400, "output_tokens": 1200, "tool_calls": 7, "cost_usd": 0.048 },
+      "default": { "kind": "success", "response_path": "responses/false-positive/reasoner-1.json" }
+    },
+    "reasoner-2": {
+      "usage": { "input_tokens": 11200, "output_tokens": 1400, "tool_calls": 9, "cost_usd": 0.061 },
+      "default": { "kind": "success", "response_path": "responses/false-positive/reasoner-2.json" }
+    },
+    "reasoner-3": {
+      "usage": { "input_tokens": 8800, "output_tokens": 900, "tool_calls": 5, "cost_usd": 0.044 },
+      "default": { "kind": "success", "response_path": "responses/false-positive/reasoner-3.json" }
+    }
+  }
+}

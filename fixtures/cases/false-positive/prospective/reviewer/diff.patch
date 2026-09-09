@@ -1,0 +1,42 @@
+diff --git a/internal/frame/frame.go b/internal/frame/frame.go
+index 1111111..2222222 100644
+--- a/internal/frame/frame.go
++++ b/internal/frame/frame.go
+@@ -6,10 +6,20 @@ package frame
+ // HeaderSize is the number of bytes prefixed to every payload.
+ const HeaderSize = 1
+ 
+ // Encode frames payload for the wire.
+ func Encode(payload []byte) []byte {
+-	out := make([]byte, len(payload))
+-	copy(out, payload)
++	out := make([]byte, HeaderSize+len(payload))
++	out[0] = byte(len(payload))
++	copy(out[HeaderSize:], payload)
+ 	return out
+ }
++
++// Decode returns the payload carried by b.
++func Decode(b []byte) ([]byte, error) {
++	if len(b) < HeaderSize {
++		return nil, ErrShortFrame
++	}
++	n := int(b[0])
++	return b[HeaderSize : HeaderSize+n], nil
++}
+diff --git a/internal/transport/send.go b/internal/transport/send.go
+index 3333333..4444444 100644
+--- a/internal/transport/send.go
++++ b/internal/transport/send.go
+@@ -10,6 +10,10 @@ import (
+ )
+ 
+ // Send writes one framed payload.
+ func Send(w io.Writer, payload []byte) error {
++	if len(payload) > frame.MaxPayload {
++		return fmt.Errorf("transport: payload of %d bytes exceeds the %d-byte frame limit",
++			len(payload), frame.MaxPayload)
++	}
+ 	_, err := w.Write(frame.Encode(payload))
+ 	return err
+ }

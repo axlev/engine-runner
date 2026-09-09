@@ -1,0 +1,7 @@
+{
+  "schema_version": "engine-manifest/v1",
+  "case_id": "false-positive",
+  "base_commit": "1111111111111111111111111111111111111111",
+  "cutoff_commit": "2222222222222222222222222222222222222222",
+  "snapshot_format": "directory-snapshot/v1"
+}
