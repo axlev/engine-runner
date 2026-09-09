@@ -376,6 +376,20 @@ func (o *Orchestrator) runStageWithRetries(
 			continue
 		}
 
+		// Evidence citations are checked after the schema, not before: an
+		// output that is not schema-valid has nothing worth citation-checking,
+		// and the schema error is the more useful one to report.
+		evidenceErr, evidenceWarnings := validateEvidence(result.OutputPath, bundleRoot)
+		for _, w := range evidenceWarnings {
+			o.warnf("stage %s attempt %d: %s", stage, attempt, w)
+		}
+		if evidenceErr != nil {
+			record.Err = evidenceErr.Error()
+			records = append(records, record)
+			lastErr = fmt.Errorf("stage %s attempt %d: %w", stage, attempt, evidenceErr)
+			continue
+		}
+
 		records = append(records, record)
 		return result.OutputPath, records, nil
 	}

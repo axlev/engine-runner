@@ -11,8 +11,8 @@
       "evidence": [
         {
           "file": "internal/paging/paginate.go",
-          "start_line": 42,
-          "end_line": 47,
+          "start_line": 12,
+          "end_line": 12,
           "excerpt": "for i := 0; i <= pageSize; i++ {"
         }
       ],
@@ -28,8 +28,8 @@
       "evidence": [
         {
           "file": "internal/runner/runner.go",
-          "start_line": 88,
-          "end_line": 90,
+          "start_line": 19,
+          "end_line": 19,
           "excerpt": "timeout := cfg.Retry.MaxWait"
         }
       ],
