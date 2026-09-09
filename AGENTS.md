@@ -79,6 +79,43 @@ weaken them need an explicit design decision, not a quiet refactor.
   (scenario, stage, attempt). Container arguments are a pure function of
   their spec. Reruns of the same case produce identical fingerprints.
 
+## Cross-repo contract with `miner`
+
+- **Treat the prospective bundle wire contract as frozen in both directions.** Do not
+  change the `reviewer/` + `control/` layout, the entry names, the pinned schema-version
+  strings (`engine-manifest/v1`, `reviewer-metadata/v1`), the reviewer metadata field
+  allowlist, or the checksum-manifest semantics unless a new product requirement cannot be
+  implemented without it — not for tidiness, naming, or a nicer shape. If a requirement
+  does force a change, bump the schema version rather than redefining an existing one, and
+  say so explicitly in your report: a silently redefined `v1` is worse than a loudly
+  introduced `v2`. This binds the engine as much as the miner.
+
+- **The miner hand-maintains a copy of your boundary rules, and nothing detects drift.**
+  `miner/internal/prospectiveexport/bundle.go` duplicates the structural rules in
+  `internal/boundaryvalidator` so a bad bundle fails at export time rather than at ingest.
+  Go forbids importing another module's `internal/` packages, so neither side can import
+  the other and no test can compare them. If you tighten, add, or rename a rule in
+  `boundaryvalidator`, the miner keeps publishing bundles you will reject — silently, until
+  someone updates it by hand. There is no shared memory between `coder-miner` and
+  `coder-engine-runner` (`docs/system-design.md` §14), so no session is notified
+  automatically. When you change a boundary rule, state it prominently enough that it can
+  be carried to the miner by hand.
+
+- **The oracle-name heuristics are exempt from the freeze.** `oracleShapedSubstrings`,
+  `oracleArtifactBasenames`, and `highSignalOracleSubstrings` are meant to be tuned against
+  real exports, as `docs/prospective-bundle-contract.md` says. Tuning them changes no
+  bundle's structure and they are warnings-only on the miner's side, so they may move on
+  either side without being treated as a break. Expect `solution` and `verdict` to
+  false-positive on legitimate third-party source; prefer `WaivedOracleShapedPaths` over
+  narrowing a rule, and expect the miner to report such paths rather than renaming them.
+
+- **`reviewer/repository/` is the tree of `cutoff_commit`, not `base_commit`.** This is
+  deliberate: your own fixtures hold post-change content, and
+  `internal/orchestrator/evidence.go` fails any citation naming a line outside the snapshot
+  file, so a base-tree snapshot would fail every citation of an added line. Do not "correct"
+  this to the base tree without raising it explicitly — it would invalidate every bundle the
+  miner has produced.
+
 ## Working conventions
 
 - Go 1.26. Run `go build ./... && go vet ./... && go test ./... && gofmt -l .`
@@ -99,6 +136,8 @@ Stop and ask before, not after:
 - narrowing, disabling, or making non-fatal any existing check
 - excluding a term/path/case from a detection list
 - anything touching the frozen protocol or schema versions
+- anything in the prospective bundle wire contract, which is frozen in both
+  directions (see Cross-repo contract with `miner`)
 
 ## Reporting
 
@@ -108,6 +147,10 @@ Stop and ask before, not after:
 - "Verified" means the stated artifact was actually run. Otherwise say
   what was actually run.
 - State what you did not verify.
+- A boundary-rule change is not finished when it compiles. The miner
+  hand-maintains a copy and nothing detects drift, so report it prominently
+  enough to be carried across by hand (see Cross-repo contract with
+  `miner`).
 
 ## Verification artifacts
 
