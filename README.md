@@ -162,6 +162,8 @@ reachable.
 Milestone 1 (deterministic vertical slice) is complete, as is the adapter
 work of Milestone 2 and the boundary validator that opens Milestone 3.
 
+Remaining work is tracked in [`docs/backlog.md`](docs/backlog.md).
+
 The claude adapter image builds and runs (`docker/build.sh`). Known gaps
 are listed in [`AGENTS.md`](AGENTS.md) — notably that no stage has yet run
 *through* a container, so the runner's mounts, network policy and

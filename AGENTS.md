@@ -208,6 +208,12 @@ has been read. If a result needs investigating, the tree must still exist.
 
 ## Current state
 
+The work queue lives in [`docs/backlog.md`](docs/backlog.md) — what is left, in
+what order, and why that order. Update its Status column in place rather than
+tracking work here. This section records gaps that are settled decisions; the
+backlog records what is still to be done.
+
+
 Milestone 1 (deterministic vertical slice) and the adapter work of
 Milestone 2 are implemented. See `docs/system-design.md` section 15 for the
 milestone definitions.
