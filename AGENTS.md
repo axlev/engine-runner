@@ -192,13 +192,40 @@ Stop and ask before, not after:
 - Never describe a reconstructed artifact as the original. If a demo
   required rebuilding, fabricating, or modifying input, say so in the
   same sentence as the result.
-- "Verified" means the stated artifact was actually run. Otherwise say
-  what was actually run.
 - State what you did not verify.
 - A boundary-rule change is not finished when it compiles. Nothing notifies
   the miner, so report it prominently enough to be carried across by hand
   (see Cross-repo contract with `miner`).
 
+### Status vocabulary
+
+Use exactly these terms for the state of any work — in `docs/backlog.md`, in
+commit messages, and when reporting to the user. **Do not substitute "done",
+"complete", "works", or "exists"**: those round up, and each term below is a
+claim with a bar attached.
+
+| Term | Bar |
+|---|---|
+| `Absent` | Not built. Nothing to point at. |
+| `Present` | Code exists and compiles. Says nothing about whether it is right. |
+| `Implemented` | Built to its intended behaviour, with tests that exercise that behaviour. |
+| `Verified` | The stated checks were **actually run successfully in this session**. Not "should pass" and not "passed last week". |
+| `Integrated` | Exercised end to end against real inputs, not fixtures. |
+| `Shipped` | Committed and pushed to the branch the user approved. |
+| `Blocked` | Cannot proceed, with the blocker named. |
+| `Needs a decision` | Waiting on the user, because the tradeoff is theirs. |
+
+They compose: "Implemented and Verified" is ordinary; "Implemented, not
+Verified" is the honest state of anything whose test has not been run since it
+was written. `6fcda0e` shipped in exactly that state and said so.
+
+The terms are ordered by strength and **must not be rounded up**. A thing that
+compiles is `Present`, not `Implemented`. A thing whose tests you wrote but did
+not run is `Implemented`, not `Verified`. A thing verified on fixtures is not
+`Integrated`.
+
+Adopted from `coder-miner`, which uses the same vocabulary, so a status word
+means the same thing in both repositories.
 ## Verification artifacts
 
 Do not delete a run tree in the same command that produces it. Clean up
