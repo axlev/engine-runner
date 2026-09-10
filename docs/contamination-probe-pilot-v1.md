@@ -153,7 +153,49 @@ and that failure to recognise on demand does not rule out priming during review.
 **Residual risk, stated plainly:** the cohort is not proven clean. It is proven not to be
 *obviously* contaminated on opus, and unmeasured on haiku and sonnet. That is the honest
 ceiling of what can be established without a post-cutoff control arm, which this dataset
-cannot supply.
+cannot supply — see the corrective-commit answer below, which closes that door
+definitively rather than leaving it merely unexplored.
+
+### Correction, 2026-09-10: three probed cases are no longer in the cohort
+
+After this probe ran, the miner reselected the three negatives. The original set came
+from eleven arbitrarily sampled rows rather than the full population of 360 zero-signal
+candidates, and one claim in the cohort document — that 17190 had the "highest stateful
+risk score of any candidate with no corrective evidence" — was wrong; it ranked 7th. The
+reselection ranked all 360 and read the diffs.
+
+Effect on the results above:
+
+| Probed | Status |
+|---|---|
+| 7 positives (`fd8ee329`, `deaebcc7`, `83d945a6`, `322abe6a`, `fe99bcf9`, `c21d519d`, `de6d5d30`) | **still in the cohort — results stand** |
+| 3 negatives (`b1bd4354`, `b17c021f`, `7054a090`) | **no longer in the cohort — results stale** |
+| 3 current negatives (`3a74a3a2`, `9ba8fca7`, `c96a113c`) | **never probed** |
+
+The verdict is unaffected in substance: the negatives contributed no positive evidence
+in either probe, and the finding rests on opus recognising none of the diffs it was
+shown while recognising Heartbleed. But the cohort is not fully covered until the three
+current negatives are probed, and that is outstanding.
+
+### The corrective-commit question: answered, and the answer closes the door
+
+Asked whether any of the seven positives had a correction postdating the training cutoff
+(~2026-05), which would mean the model could not have seen the fix. Answer, in aggregate:
+
+- **No corrective commit in the cohort postdates ~2026-05.** Across all seven positives
+  they span 2024-05-24 to 2025-04-18 — the latest is over a year before the cutoff.
+- **The entire dataset is FRR PRs merged 2024-01-02 to 2024-12-31.** Nothing in it was
+  merged after 2025-06.
+
+So **no reselection within this data can produce a contamination-safe cohort** — not for
+the changes, and not for their corrections. Closing that gap would need a fresh collect
+over 2026 PRs, which is miner work and needs scoping.
+
+The answer was deliberately given in aggregate. Per-case corrective dates would disclose
+the positive/negative split, since all positives have corrective signals and the
+negatives have none by construction — that split is oracle information, and section 13
+gives this role no oracle access. The aggregate answers the validity question without
+being usable as an oracle.
 
 ### Reproducing
 

@@ -247,6 +247,10 @@ Known gaps, deliberately left open:
   because they fail its false-negative guard. Read that document before treating any
   cohort result as clean, and before designing a similar probe: it also records how a
   first attempt produced ten identical refusals that would have read as a clean result.
+  The door is now closed rather than merely unexplored: no corrective commit in the
+  cohort postdates the cutoff, and the whole dataset is 2024 PRs, so no reselection
+  within it can produce a contamination-safe cohort. Only a fresh collect over 2026 PRs
+  would.
 - Budget bounds are only partly preventable, because neither vendor CLI has
   a timeout or token flag. `max_wall_clock_seconds` is enforced by the
   orchestrator and `max_cost_usd` by claude alone; the token and tool-call
