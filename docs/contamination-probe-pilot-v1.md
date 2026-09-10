@@ -174,8 +174,13 @@ Effect on the results above:
 
 The verdict is unaffected in substance: the negatives contributed no positive evidence
 in either probe, and the finding rests on opus recognising none of the diffs it was
-shown while recognising Heartbleed. But the cohort is not fully covered until the three
-current negatives are probed, and that is outstanding.
+shown while recognising Heartbleed.
+
+**Closed 2026-09-10.** The three replacement negatives were probed on opus, the only
+arm where the instrument is valid. All three: `NO RECOGNITION`. The Heartbleed
+false-negative guard was re-run in the same batch and fired, naming the CVE and commit
+`96db9023`, so the nulls are reports of absence rather than refusals. **The cohort is
+now fully covered** — 7 positives and 3 negatives, all `NO RECOGNITION` on Probe B.
 
 ### The corrective-commit question: answered, and the answer closes the door
 

@@ -50,7 +50,7 @@ discovered on case 1, not case 7.
 | # | Item | Status | Notes |
 |---|---|---|---|
 | 1.1 | Verify the reasoner-3 disposition fix | **Verified** | Verified on the real FRR case rather than the synthetic one: reasoner-2 rejected the single finding, reasoner-3 tried three angles to overturn that rejection, failed, and wrote **`REJECTED`** — giving `rejected_by_c: 1`. Before `6fcda0e` it would have written `CONFIRMED` meaning "B's verdict survived" and been scored as a real defect. |
-| 1.2 | Probe the 3 replacement negatives | **Blocked** | `3a74a3a2`, `9ba8fca7`, `c96a113c` replaced the negatives after the contamination probe ran. Same quota block. Gap recorded in [`contamination-probe-pilot-v1.md`](contamination-probe-pilot-v1.md). |
+| 1.2 | Probe the 3 replacement negatives | **Verified** | All three probed on opus: `NO RECOGNITION`, with the Heartbleed false-negative guard firing in the same batch so the nulls are reports of absence rather than refusals. The cohort is now fully covered — 7 positives and 3 negatives. |
 | 1.3 | Run 10 cases | **Absent** | 30 stages. **Plan around OAuth session limits** — a subscription token is rate-limited, not metered, so a cohort will stall partway and need resuming across reset windows. An API key removes that failure mode entirely. |
 | 1.4 | Manual inspection | **Absent** | ~40 findings; tractable by hand. This is the input to Phase 2's design, not a formality. |
 
