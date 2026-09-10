@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/axlev/engine-runner/internal/adapters"
 	"github.com/axlev/engine-runner/internal/adapters/fixture"
@@ -433,5 +434,81 @@ func TestAuthModeValidatesForEveryVendorValue(t *testing.T) {
 	// A typo must not slip through as free-text provenance.
 	if err := schema.Validate(doc("subscription")); err == nil {
 		t.Errorf("auth_mode=%q should be rejected; the enum is what makes the field trustworthy", "subscription")
+	}
+}
+
+// TestStageDurationIsDerivedNotLeftToTheReader pins the point of 0.1: two
+// timestamps in a sealed artifact are not a measurement until something
+// subtracts them, and for a long time nothing did — cohort timing had to be
+// worked out by hand from run.json.
+func TestStageDurationIsDerivedNotLeftToTheReader(t *testing.T) {
+	o := newOrchestrator(t)
+	outcome, err := o.Run(context.Background(), "run-timing", "happy-path", happyPathBundle)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	w, err := NewWriter(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	runDir, err := w.WriteRun(outcome)
+	if err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(runDir, "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+	var doc struct {
+		Stages []struct {
+			Stage      string `json:"stage"`
+			StartedAt  string `json:"started_at"`
+			FinishedAt string `json:"finished_at"`
+			DurationMS int    `json:"duration_ms"`
+		} `json:"stages"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+	if len(doc.Stages) == 0 {
+		t.Fatalf("no stages recorded")
+	}
+	for _, s := range doc.Stages {
+		if s.StartedAt == "" || s.FinishedAt == "" {
+			t.Errorf("%s: timestamps missing", s.Stage)
+		}
+		// The fixture adapter returns near-instantly, so the assertion is
+		// that the field exists and is sane rather than that it is large.
+		if s.DurationMS < 0 {
+			t.Errorf("%s: duration_ms = %d, want >= 0", s.Stage, s.DurationMS)
+		}
+	}
+}
+
+// A stage that burned a repair attempt really did cost that time, so the
+// duration must cover every attempt rather than only the one that succeeded.
+func TestStageDurationCoversEveryAttempt(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	recs := []orchestrator.StageAttemptRecord{
+		{Result: adapters.RunResult{StartedAt: start, FinishedAt: start.Add(3 * time.Second)}},
+		{Result: adapters.RunResult{StartedAt: start.Add(3 * time.Second), FinishedAt: start.Add(10 * time.Second)}},
+	}
+	if got := totalDurationMS(recs); got != 10000 {
+		t.Errorf("totalDurationMS = %d, want 10000 (3s failed attempt + 7s successful one)", got)
+	}
+}
+
+// Absent or reversed timestamps must not produce a negative duration.
+func TestStageDurationIgnoresUnusableTimestamps(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	recs := []orchestrator.StageAttemptRecord{
+		{Result: adapters.RunResult{}},                                                     // both zero
+		{Result: adapters.RunResult{StartedAt: start}},                                     // no finish
+		{Result: adapters.RunResult{StartedAt: start.Add(time.Second), FinishedAt: start}}, // reversed
+		{Result: adapters.RunResult{StartedAt: start, FinishedAt: start.Add(2 * time.Second)}},
+	}
+	if got := totalDurationMS(recs); got != 2000 {
+		t.Errorf("totalDurationMS = %d, want 2000 — only the one usable pair counts", got)
 	}
 }

@@ -93,16 +93,29 @@ type telemetryDoc struct {
 }
 
 type stageOutcomeDoc struct {
-	Stage          string         `json:"stage"`
-	Adapter        string         `json:"adapter"`
-	AdapterVersion string         `json:"adapter_version,omitempty"`
-	AuthMode       string         `json:"auth_mode,omitempty"`
-	Attempts       int            `json:"attempts"`
-	FinalExitCode  int            `json:"final_exit_code"`
-	StartedAt      string         `json:"started_at,omitempty"`
-	FinishedAt     string         `json:"finished_at,omitempty"`
-	Usage          adapters.Usage `json:"usage"`
-	OutputPath     string         `json:"output_path,omitempty"`
+	Stage          string `json:"stage"`
+	Adapter        string `json:"adapter"`
+	AdapterVersion string `json:"adapter_version,omitempty"`
+	AuthMode       string `json:"auth_mode,omitempty"`
+	Attempts       int    `json:"attempts"`
+	FinalExitCode  int    `json:"final_exit_code"`
+	StartedAt      string `json:"started_at,omitempty"`
+	FinishedAt     string `json:"finished_at,omitempty"`
+
+	// DurationMS is derived here rather than left for a reader to subtract.
+	// Two timestamps in a sealed artifact are not a measurement until
+	// something computes the difference, and nothing did: cohort timing had
+	// to be worked out by hand from run.json.
+	//
+	// The vendor figures sit beside it so the gap between them is visible.
+	// DurationMS - VendorDurationMS is engine overhead: container start,
+	// mounting, and the per-attempt copy of the source snapshot. With a
+	// 7,600-file tree that overhead is the number worth watching.
+	DurationMS          int            `json:"duration_ms"`
+	VendorDurationMS    int            `json:"vendor_duration_ms,omitempty"`
+	VendorAPIDurationMS int            `json:"vendor_api_duration_ms,omitempty"`
+	Usage               adapters.Usage `json:"usage"`
+	OutputPath          string         `json:"output_path,omitempty"`
 }
 
 // writeStages writes stages/<stage>/{telemetry,request,review-*}.json for
@@ -169,7 +182,14 @@ func (w *Writer) writeStages(stagesDir, runDir string, attempts []orchestrator.S
 			FinalExitCode:  last.Result.ExitCode,
 			StartedAt:      formatTime(last.Result.StartedAt),
 			FinishedAt:     formatTime(last.Result.FinishedAt),
-			Usage:          last.Result.Usage,
+			// Summed across every attempt, not just the winning one: a
+			// stage that burned a repair attempt really did cost that time,
+			// and a per-case total that ignored it would understate the
+			// cohort.
+			DurationMS:          totalDurationMS(recs),
+			VendorDurationMS:    sumVendorDurationMS(recs),
+			VendorAPIDurationMS: sumVendorAPIDurationMS(recs),
+			Usage:               last.Result.Usage,
 		}
 
 		if winning := lastSuccessful(recs); winning != nil {
@@ -398,4 +418,34 @@ func formatTime(t time.Time) string {
 		return ""
 	}
 	return t.UTC().Format(time.RFC3339)
+}
+
+// totalDurationMS sums wall-clock time across every attempt of a stage.
+func totalDurationMS(recs []orchestrator.StageAttemptRecord) int {
+	total := 0
+	for _, rec := range recs {
+		if rec.Result.FinishedAt.IsZero() || rec.Result.StartedAt.IsZero() {
+			continue
+		}
+		if d := rec.Result.FinishedAt.Sub(rec.Result.StartedAt); d > 0 {
+			total += int(d.Milliseconds())
+		}
+	}
+	return total
+}
+
+func sumVendorDurationMS(recs []orchestrator.StageAttemptRecord) int {
+	total := 0
+	for _, rec := range recs {
+		total += rec.Result.VendorDurationMS
+	}
+	return total
+}
+
+func sumVendorAPIDurationMS(recs []orchestrator.StageAttemptRecord) int {
+	total := 0
+	for _, rec := range recs {
+		total += rec.Result.VendorAPIDurationMS
+	}
+	return total
 }

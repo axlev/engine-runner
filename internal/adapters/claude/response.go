@@ -18,7 +18,16 @@ type response struct {
 	TotalCostUSD float64 `json:"total_cost_usd"`
 	SessionID    string  `json:"session_id"`
 	NumTurns     int     `json:"num_turns"`
-	Usage        struct {
+
+	// The CLI's own timing. Kept because the split is what our two
+	// timestamps cannot give: DurationAPIMS is time spent in API calls,
+	// DurationMS is everything the CLI did. Subtracting them from the
+	// orchestrator's wall clock separates model time from engine overhead -
+	// which is the question a 7,600-file snapshot raises, since it cannot
+	// be answered by a single elapsed figure.
+	DurationMS    int `json:"duration_ms"`
+	DurationAPIMS int `json:"duration_api_ms"`
+	Usage         struct {
 		// input_tokens counts ONLY the uncached remainder. With prompt
 		// caching on - which Claude Code does by default - almost all of a
 		// stage's input arrives as cache reads or cache writes, so this

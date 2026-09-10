@@ -111,9 +111,18 @@ type RunResult struct {
 	ExitCode   int       `json:"exit_code"`
 	StartedAt  time.Time `json:"started_at"`
 	FinishedAt time.Time `json:"finished_at"`
-	Usage      Usage     `json:"usage"`
-	Adapter    string    `json:"adapter"`
-	Version    string    `json:"version"`
+
+	// VendorDurationMS and VendorAPIDurationMS are the vendor's own timing,
+	// when it reports any. StartedAt/FinishedAt bound everything the engine
+	// did - container start, the CLI's own work, the model call - so on
+	// their own they cannot say whether a slow stage was slow at the model
+	// or slow in our container. These separate it. Zero when unreported;
+	// codex reports no timing.
+	VendorDurationMS    int    `json:"vendor_duration_ms,omitempty"`
+	VendorAPIDurationMS int    `json:"vendor_api_duration_ms,omitempty"`
+	Usage               Usage  `json:"usage"`
+	Adapter             string `json:"adapter"`
+	Version             string `json:"version"`
 
 	// AuthMode records WHICH KIND of credential produced this result, never
 	// the credential itself. It matters because the kind changes the

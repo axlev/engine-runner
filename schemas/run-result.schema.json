@@ -193,6 +193,21 @@
           "type": "string",
           "format": "date-time"
         },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Wall-clock milliseconds summed across every attempt of this stage, including attempts that failed and were retried. Derived here so a reader never has to subtract timestamps."
+        },
+        "vendor_duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Milliseconds the vendor CLI reports for its own work, summed across attempts. Absent when the vendor reports no timing. duration_ms minus this is engine overhead: container start, mounting, and the per-attempt snapshot copy."
+        },
+        "vendor_api_duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Milliseconds the vendor CLI reports as spent in API calls, summed across attempts. Separates model time from the CLI's own overhead."
+        },
         "usage": {
           "$ref": "#/$defs/usage"
         },

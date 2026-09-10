@@ -145,6 +145,8 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 	if parseErr != nil {
 		return base, withStderr(fmt.Errorf("claude: %w", parseErr), result.Stderr)
 	}
+	base.VendorDurationMS = resp.DurationMS
+	base.VendorAPIDurationMS = resp.DurationAPIMS
 	base.Usage = adapters.Usage{
 		InputTokens:  resp.TotalInputTokens(),
 		OutputTokens: resp.Usage.OutputTokens,
