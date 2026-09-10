@@ -369,15 +369,22 @@ func checkReviewerTree(reviewerRoot string, add func(rule, path, detail string))
 			return nil
 		}
 
-		// Irregular files: symlinks, sockets, devices, FIFOs. A symlink can
-		// point anywhere, including at the oracle bundle, so it is rejected
-		// rather than resolved.
+		// Irregular files: sockets, devices, FIFOs are never admissible.
+		//
+		// Symlinks are conditional. A blanket rejection was a proxy for the
+		// property actually wanted - that no reference escapes the snapshot -
+		// and the proxy was too broad to use: FRR carries ~77 in-tree
+		// relative links under tests/topotests/ in every commit, so every
+		// bundle mined from it failed on links no PR had touched. A link
+		// that provably resolves inside reviewer/repository/ grants a
+		// reviewer no reach it did not already have, since every file there
+		// is already readable. See checkSnapshotSymlink for the conditions.
 		info, infoErr := d.Info()
 		if infoErr == nil {
 			mode := info.Mode()
 			switch {
 			case mode&os.ModeSymlink != 0:
-				add(RuleNoIrregularFiles, rel, "symlink is not admissible in a prospective bundle")
+				checkSnapshotSymlink(reviewerRoot, path, rel, add)
 			case mode&os.ModeSocket != 0:
 				add(RuleNoIrregularFiles, rel, "socket is not admissible in a prospective bundle")
 			case mode&os.ModeDevice != 0:
@@ -395,6 +402,81 @@ func checkReviewerTree(reviewerRoot string, add func(rule, path, detail string))
 		checkOracleShapedPath(rel, d.Name(), add)
 		return nil
 	})
+}
+
+// checkSnapshotSymlink admits a symlink only when it is provably confined to
+// the reviewer's own source snapshot, and reports why when it is not.
+//
+// The conditions, all required:
+//
+//  1. It lives under reviewer/repository/. A link anywhere else in
+//     reviewer/ - beside diff.patch or metadata.json - has no legitimate
+//     purpose and is rejected outright.
+//  2. Its target is relative. An absolute target is machine-specific and
+//     cannot be reasoned about from the bundle alone.
+//  3. Resolved against the link's own directory, it stays inside
+//     reviewer/repository/. This is the property the old blanket rule was
+//     approximating.
+//  4. It resolves to something that exists.
+//  5. Its target is not itself a symlink. Chains are rejected rather than
+//     followed to a depth limit: FRR has none, and a rule with no traversal
+//     loop has no traversal bug. This is deliberately stricter than the
+//     depth-limited version that was proposed.
+//
+// Note what is NOT relied on: the target is not resolved with EvalSymlinks
+// against the live filesystem beyond one Lstat, so a link cannot be walked
+// out of the tree during checking.
+func checkSnapshotSymlink(reviewerRoot, path, rel string, add func(rule, path, detail string)) {
+	snapshotRoot := filepath.Join(reviewerRoot, "repository")
+
+	// Condition 1: only the source snapshot may carry links.
+	if !strings.HasPrefix(filepath.ToSlash(rel), snapshotPrefix) {
+		add(RuleNoIrregularFiles, rel,
+			"symlink outside reviewer/repository/ is not admissible in a prospective bundle")
+		return
+	}
+
+	target, err := os.Readlink(path)
+	if err != nil {
+		add(RuleNoIrregularFiles, rel, fmt.Sprintf("cannot read symlink target: %v", err))
+		return
+	}
+
+	// Condition 2: relative targets only.
+	if filepath.IsAbs(target) {
+		add(RuleNoIrregularFiles, rel,
+			fmt.Sprintf("symlink target %q is absolute; only in-tree relative targets are admissible", target))
+		return
+	}
+
+	// Condition 3: resolves inside the snapshot. Cleaned lexically against
+	// the link's own directory - no filesystem traversal, so nothing can
+	// escape during the check itself.
+	resolved := filepath.Clean(filepath.Join(filepath.Dir(path), target))
+	snapAbs, err1 := filepath.Abs(snapshotRoot)
+	resAbs, err2 := filepath.Abs(resolved)
+	if err1 != nil || err2 != nil {
+		add(RuleNoIrregularFiles, rel, "cannot resolve symlink target for containment check")
+		return
+	}
+	if resAbs != snapAbs && !strings.HasPrefix(resAbs, snapAbs+string(filepath.Separator)) {
+		add(RuleNoIrregularFiles, rel,
+			fmt.Sprintf("symlink target %q escapes reviewer/repository/", target))
+		return
+	}
+
+	// Condition 4: the target exists. Condition 5: and is not itself a link.
+	info, err := os.Lstat(resolved)
+	if err != nil {
+		add(RuleNoIrregularFiles, rel,
+			fmt.Sprintf("symlink target %q does not exist in the snapshot", target))
+		return
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		add(RuleNoIrregularFiles, rel,
+			fmt.Sprintf("symlink target %q is itself a symlink; chains are not admissible", target))
+		return
+	}
 }
 
 // snapshotPrefix is the region whose vocabulary this project does not

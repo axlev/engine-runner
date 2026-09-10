@@ -55,13 +55,46 @@ reintroduce contamination after validation ran.
 
 Rejected outright anywhere in the tree:
 
-- symlinks, sockets, device nodes, named pipes
+- sockets, device nodes, named pipes
 - `.git`, `.gitmodules`, `packed-refs`, `HEAD`, `ORIG_HEAD`, `FETCH_HEAD`,
   `MERGE_HEAD`, `shallow`, `objects`, `refs`, `reflogs`, `worktrees`,
   `alternates`
 
-A symlink is rejected rather than resolved: it can point anywhere,
-including at the oracle bundle.
+### Symlinks
+
+Permitted in `reviewer/repository/` **only**, and only when all of the
+following hold. Anything else is rejected:
+
+1. The target is relative, not absolute.
+2. Resolved against the link's own directory, it stays inside
+   `reviewer/repository/`.
+3. It resolves to something that exists in the snapshot.
+4. The target is not itself a symlink. Chains are rejected rather than
+   followed to a depth limit — a rule with no traversal loop cannot have a
+   traversal bug.
+
+A link anywhere else under `reviewer/` — beside `diff.patch` or
+`metadata.json` — has no legitimate purpose and is rejected.
+
+This replaced a blanket rejection, which was a proxy for the property
+actually wanted: that no reference escapes the snapshot. The proxy was too
+broad to use. FRR carries ~77 in-tree relative links under
+`tests/topotests/` in every commit of its history, so every bundle mined
+from it failed on links no PR had touched. A link that provably resolves
+inside `reviewer/repository/` grants a reviewer no reach it did not already
+have, since every file there is already readable.
+
+**Do not dereference links into regular files.** That puts identical content
+at two paths, so a diff naming one path no longer reproduces the snapshot,
+and a reviewer sees duplicated files with no indication they are linked.
+The engine preserves them as links into the stage container.
+
+**Symlinks are not listed in `control/checksums.sha256`.** The manifest
+covers regular files, which is unchanged; a link's target is already covered
+under the target's own path. Listing a link would either duplicate a digest
+or require defining the digest of a target string, and neither is needed:
+condition 2 already bounds what a link can reach to content the reviewer can
+already read.
 
 ## `reviewer/diff.patch`
 

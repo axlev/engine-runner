@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/axlev/engine-runner/internal/adapters"
 )
@@ -199,11 +200,24 @@ func copyHandoff(src, dst, workDir, label string) (string, error) {
 	return rel, nil
 }
 
-// copyTree copies src (a file or directory) to dst, refusing any symlink it
-// encounters, and returns the workDir-relative paths of every file copied.
+// copyTree copies src (a file, directory, or in-tree symlink) to dst and
+// returns the workDir-relative paths of every file copied.
+//
+// A symlink is recreated as a symlink rather than dereferenced, and only
+// after the same containment check the boundary validator applies: relative
+// target, resolving inside the copied tree, to something that exists and is
+// not itself a link. Dereferencing instead would put identical content at
+// two paths, so a diff naming one path would no longer reproduce the
+// snapshot - and a reviewer would see duplicated files with no indication
+// they are linked.
+//
+// This check is deliberately not delegated to the validator having already
+// run. The validator gates admissibility; this gates what is placed in a
+// container. Two independent checks of the same property is the posture the
+// rest of this package takes (allow-list, not filter).
 func copyTree(src, dst string, info os.FileInfo, workDir string) ([]string, error) {
 	if info.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("contextbuilder: refusing to copy symlink %s", src)
+		return copySymlink(src, dst, workDir)
 	}
 	if !info.IsDir() {
 		if err := copyFile(src, dst); err != nil {
@@ -250,4 +264,66 @@ func copyFile(src, dst string) error {
 		return fmt.Errorf("contextbuilder: writing %s: %w", dst, err)
 	}
 	return nil
+}
+
+// symlinkRoot is the directory a copied symlink's target must stay inside:
+// the source snapshot the link came from.
+func symlinkRoot(src string) string {
+	// src is <bundle>/reviewer/repository/<...>; walk up to repository/.
+	dir := src
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		if filepath.Base(dir) == "repository" {
+			return dir
+		}
+		dir = parent
+	}
+}
+
+// copySymlink recreates one in-tree symlink at dst, or refuses it.
+//
+// Returns no copied paths: the link is not a file whose bytes are hashed,
+// and its target is already accounted for under the target's own path.
+func copySymlink(src, dst, workDir string) ([]string, error) {
+	root := symlinkRoot(src)
+	if root == "" {
+		return nil, fmt.Errorf("contextbuilder: refusing symlink %s outside a repository snapshot", src)
+	}
+
+	target, err := os.Readlink(src)
+	if err != nil {
+		return nil, fmt.Errorf("contextbuilder: reading symlink %s: %w", src, err)
+	}
+	if filepath.IsAbs(target) {
+		return nil, fmt.Errorf("contextbuilder: refusing symlink %s with absolute target %q", src, target)
+	}
+
+	resolved := filepath.Clean(filepath.Join(filepath.Dir(src), target))
+	rootAbs, err1 := filepath.Abs(root)
+	resAbs, err2 := filepath.Abs(resolved)
+	if err1 != nil || err2 != nil {
+		return nil, fmt.Errorf("contextbuilder: cannot resolve symlink %s for containment", src)
+	}
+	if resAbs != rootAbs && !strings.HasPrefix(resAbs, rootAbs+string(filepath.Separator)) {
+		return nil, fmt.Errorf("contextbuilder: refusing symlink %s: target %q escapes the snapshot", src, target)
+	}
+
+	info, err := os.Lstat(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("contextbuilder: refusing symlink %s: target %q does not exist", src, target)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("contextbuilder: refusing symlink %s: target %q is itself a symlink", src, target)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return nil, fmt.Errorf("contextbuilder: creating parent for %s: %w", dst, err)
+	}
+	if err := os.Symlink(target, dst); err != nil {
+		return nil, fmt.Errorf("contextbuilder: recreating symlink %s: %w", dst, err)
+	}
+	return nil, nil
 }

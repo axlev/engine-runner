@@ -90,16 +90,28 @@ weaken them need an explicit design decision, not a quiet refactor.
   say so explicitly in your report: a silently redefined `v1` is worse than a loudly
   introduced `v2`. This binds the engine as much as the miner.
 
-- **The miner hand-maintains a copy of your boundary rules, and nothing detects drift.**
-  `miner/internal/prospectiveexport/bundle.go` duplicates the structural rules in
-  `internal/boundaryvalidator` so a bad bundle fails at export time rather than at ingest.
-  Go forbids importing another module's `internal/` packages, so neither side can import
-  the other and no test can compare them. If you tighten, add, or rename a rule in
-  `boundaryvalidator`, the miner keeps publishing bundles you will reject — silently, until
-  someone updates it by hand. There is no shared memory between `coder-miner` and
-  `coder-engine-runner` (`docs/system-design.md` §14), so no session is notified
-  automatically. When you change a boundary rule, state it prominently enough that it can
-  be carried to the miner by hand.
+- **You are the sole gate on admissibility, as of 2026-09-10.** The miner used to
+  hand-maintain a copy of the structural rules in
+  `miner/internal/prospectiveexport/bundle.go`, which was a liability: two rule tables in
+  two repos, no shared memory, and no automatic consistency check, because Go forbids
+  importing another module's `internal/` packages. **That copy has been deleted.** The file
+  still exists but now holds only the miner's own concerns — writing and self-verifying
+  `control/checksums.sha256`, refusing to materialize a tree it cannot represent as plain
+  files, and blocking the exact `ground_truth.json`-style names your in-snapshot heuristic
+  deliberately omits. The miner's `cohort-verify` runs `go run ./cmd/bench` against every
+  bundle it produces, so your validator is exercised on real artifacts before a cohort is
+  frozen.
+
+  A rule you change therefore takes effect without a matching edit anywhere else — but
+  nothing notifies the miner either. There is still no shared memory between `coder-miner`
+  and `coder-engine-runner` (`docs/system-design.md` §14), so state a boundary-rule change
+  prominently enough that it can be carried across by hand.
+
+- **Admissibility is enforced in two places, not one.** `internal/boundaryvalidator` gates
+  whether a bundle may run; `internal/contextbuilder` gates what is placed inside a
+  container. A relaxation applied to only one of them does not work: the run passes
+  validation and then fails after a container has started and money has been spent. The
+  symlink rule is the worked example — both sides check containment independently.
 
 - **The oracle-name heuristics are exempt from the freeze.** `oracleShapedSubstrings`,
   `oracleArtifactBasenames`, and `highSignalOracleSubstrings` are meant to be tuned against
@@ -173,10 +185,9 @@ Stop and ask before, not after:
 - "Verified" means the stated artifact was actually run. Otherwise say
   what was actually run.
 - State what you did not verify.
-- A boundary-rule change is not finished when it compiles. The miner
-  hand-maintains a copy and nothing detects drift, so report it prominently
-  enough to be carried across by hand (see Cross-repo contract with
-  `miner`).
+- A boundary-rule change is not finished when it compiles. Nothing notifies
+  the miner, so report it prominently enough to be carried across by hand
+  (see Cross-repo contract with `miner`).
 
 ## Verification artifacts
 
