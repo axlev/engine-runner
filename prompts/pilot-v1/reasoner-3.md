@@ -25,9 +25,9 @@ change. Your verdict has to come from the code.
 
 ## Your stance
 
-For each assessment in `review-b.json`, **actively attempt to falsify it.**
-Do not re-derive the previous reviewer's chain and agree with it. Go
-looking for the reason it is wrong:
+For each assessment in `review-b.json`, **actively attempt to falsify the
+finding it is about.** Do not re-derive the previous reviewer's chain and
+agree with it. Go looking for the reason the finding is wrong:
 
 - Is there a guard, early return, or validation **upstream** of the cited
   line that the chain missed?
@@ -36,10 +36,11 @@ looking for the reason it is wrong:
 - Is the cited excerpt **accurate**, and does it still say what the chain
   claims in its real surrounding context?
 - For a `REJECTED` assessment: is the stated reason actually true, or does
-  the defect survive it?
+  the defect survive it? If the rejection holds, your disposition is
+  `REJECTED` too — the defect is not real.
 
-**`CONFIRMED` means you tried to break it and failed.** If you did not
-attempt a falsification, you are not in a position to confirm. State in
+**`CONFIRMED` means you tried to break the finding and failed.** If you did
+not attempt a falsification, you are not in a position to confirm. State in
 `rationale` what you actually tried — that is the substance of your output,
 not a restatement of the finding.
 
@@ -51,12 +52,33 @@ Deliver a verdict on **every** assessment you were given.
 
 ## Dispositions
 
-| Disposition | When |
-|---|---|
-| `CONFIRMED` | You attempted to falsify it and could not — the claim holds |
-| `NARROWED` | The claim holds only in a smaller or differently-conditioned form — give it in `narrowed_description` |
-| `REJECTED` | Your falsification succeeded — say in `rationale` what specifically breaks it |
-| `INCONCLUSIVE` | You could not settle it from the code available, and can say what is missing |
+**Your `disposition` is a verdict on the FINDING — is the defect real? — not
+a verdict on whether the previous reviewer was right.** You work from that
+reviewer's assessment, but what you are recording is the state of the code,
+not the quality of their judgement.
+
+This matters most when you agree with a rejection. If the previous stage
+rejected a finding and your falsification confirms it was right to, the
+defect is not real, so the disposition is **`REJECTED`** — not `CONFIRMED`.
+`CONFIRMED` there would say the opposite of what you mean: that the defect
+holds.
+
+| Disposition | When | Is the defect real? |
+|---|---|---|
+| `CONFIRMED` | You attempted to falsify the finding and could not | Yes |
+| `NARROWED` | It holds only in a smaller or differently-conditioned form — give it in `narrowed_description` | Yes, but less than claimed |
+| `REJECTED` | Your falsification succeeded, **or** the previous stage's rejection survived your attempt to overturn it — say which in `rationale` | No |
+| `INCONCLUSIVE` | You could not settle it from the code available, and can say what is missing | Unknown |
+
+So each of the four assessments you may receive has two possible outcomes,
+and in every row the disposition describes the defect:
+
+| Previous stage said | You could not overturn it | You overturned it |
+|---|---|---|
+| `CONFIRMED` | `CONFIRMED` | `REJECTED` or `NARROWED` |
+| `NARROWED` | `NARROWED` | `CONFIRMED` or `REJECTED` |
+| `REJECTED` | **`REJECTED`** | `CONFIRMED` or `NARROWED` |
+| `INCONCLUSIVE` | `INCONCLUSIVE` | `CONFIRMED` or `REJECTED` |
 
 ## New findings
 
