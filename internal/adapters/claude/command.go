@@ -21,14 +21,38 @@ import (
 func buildClaudeArgs(req adapters.RunRequest, creds Credentials, promptText string) []string {
 	var args []string
 
-	// --bare only ever reads ANTHROPIC_API_KEY (confirmed via `claude
-	// --help`: "OAuth and keychain are never read" in bare mode). An
-	// OAuth-token-authenticated run must skip --bare entirely and run
-	// with Claude Code's normal defaults (hooks, LSP, CLAUDE.md discovery,
-	// etc. all active) - a real reproducibility gap between the two
-	// credential kinds that engine-runner should record, not hide.
-	if creds.Kind == CredentialAPIKey {
+	// Both credential kinds must run with repository content unable to
+	// steer the reviewer. They get there by different flags, because
+	// --bare sets apiKeyHelper and so cannot be used with a token:
+	//
+	//   api_key      --bare       skips hooks, LSP, plugin sync, auto-memory
+	//                             and CLAUDE.md auto-discovery. "OAuth and
+	//                             keychain are never read" in this mode.
+	//   oauth_token  --safe-mode  disables all customizations - CLAUDE.md,
+	//                             skills, plugins, hooks, MCP servers,
+	//                             custom commands and agents.
+	//
+	// This closes a gap this comment used to merely record: an OAuth run
+	// previously executed with CLAUDE.md auto-discovery ACTIVE, so a
+	// CLAUDE.md anywhere in reviewer/repository/ would have been read as
+	// instructions - from inside the bundle, entirely outside the frozen
+	// protocol. Harmless while every snapshot was seven synthetic files;
+	// not harmless now that a snapshot is a real 7,600-file source tree.
+	//
+	// Deliberately NOT solved by rejecting bundles that carry a CLAUDE.md.
+	// Real repositories legitimately have one, so a boundary rule would be
+	// a proxy that blocks admissible cases - the same over-broad shape as
+	// the blanket symlink rejection that had to be corrected. The bundle is
+	// not the problem; reading it as instructions is, and that is fixed
+	// here.
+	//
+	// Both flags verified against the real CLI: --safe-mode succeeds under
+	// an OAuth token, where --bare cannot.
+	switch creds.Kind {
+	case CredentialAPIKey:
 		args = append(args, "--bare")
+	case CredentialOAuthToken:
+		args = append(args, "--safe-mode")
 	}
 
 	args = append(args, "-p", "--output-format", "json")

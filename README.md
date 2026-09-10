@@ -120,13 +120,14 @@ environment (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`;
 `-adapter-image`.
 
 **Which credential kind you use changes the run, not just the billing.**
-With `ANTHROPIC_API_KEY` the claude adapter passes `--bare`, so the stage
-runs with no hooks, no LSP and no `CLAUDE.md` discovery. `CLAUDE_CODE_OAUTH_TOKEN`
-cannot use `--bare` and runs with the CLI's normal defaults active — which
-means a `CLAUDE.md` inside a mined repository could influence a reviewer
-outside the frozen protocol. Each stage records which kind produced it as
-`auth_mode` in `run.json`, so results are self-describing; treat the two as
-non-comparable rather than assuming.
+Both disable `CLAUDE.md` auto-discovery, so repository content cannot steer a
+reviewer — but by different flags, since `--bare` forces an API key:
+`ANTHROPIC_API_KEY` gets `--bare`, `CLAUDE_CODE_OAUTH_TOKEN` gets
+`--safe-mode`. They still differ in what else they disable, and an OAuth
+subscription is rate-limited rather than metered, so a long cohort will stall
+on session limits that an API key would not hit. Each stage records which kind
+produced it as `auth_mode` in `run.json`, so results are self-describing;
+treat the two as non-comparable rather than assuming.
 
 ## Layout
 

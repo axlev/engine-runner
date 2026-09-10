@@ -164,3 +164,50 @@ func TestJSONSchemaFlagOmittedWithoutASchema(t *testing.T) {
 		}
 	}
 }
+
+// TestRepositoryContentCannotSteerTheReviewer pins the property, not the flag:
+// under EITHER credential kind, the invocation must disable CLAUDE.md
+// discovery so a file inside reviewer/repository/ cannot be read as
+// instructions from outside the frozen protocol.
+//
+// The two kinds reach it by different flags because --bare sets apiKeyHelper
+// and cannot be used with a token. A future refactor that drops one of them
+// reopens the hole for that credential kind only, which is exactly the sort of
+// asymmetry that goes unnoticed.
+func TestRepositoryContentCannotSteerTheReviewer(t *testing.T) {
+	for _, tc := range []struct {
+		kind Credentials
+		want string
+	}{
+		{Credentials{Kind: CredentialAPIKey}, "--bare"},
+		{Credentials{Kind: CredentialOAuthToken}, "--safe-mode"},
+	} {
+		args := buildClaudeArgs(adapters.RunRequest{}, tc.kind, "prompt")
+		found := false
+		for _, a := range args {
+			if a == tc.want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s invocation is missing %s, so CLAUDE.md discovery is live: %v",
+				tc.kind.Kind, tc.want, args)
+		}
+	}
+}
+
+// The two flags are mutually exclusive: --bare forces an API key, so passing
+// both would make an OAuth run fail at authentication.
+func TestBareAndSafeModeAreNeverBothPassed(t *testing.T) {
+	for _, kind := range []CredentialKind{CredentialAPIKey, CredentialOAuthToken} {
+		args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: kind}, "prompt")
+		var bare, safe bool
+		for _, a := range args {
+			bare = bare || a == "--bare"
+			safe = safe || a == "--safe-mode"
+		}
+		if bare && safe {
+			t.Errorf("%s: both --bare and --safe-mode passed; --bare forces an API key", kind)
+		}
+	}
+}

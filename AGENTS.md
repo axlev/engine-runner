@@ -64,6 +64,16 @@ A coding agent working here **must not**:
 These are the properties the whole system exists to guarantee. Changes that
 weaken them need an explicit design decision, not a quiet refactor.
 
+- **Repository content cannot steer a reviewer.** Both credential kinds
+  disable CLAUDE.md auto-discovery: `--bare` for an API key, `--safe-mode` for
+  an OAuth token (they are mutually exclusive - `--bare` forces an API key).
+  Without it a `CLAUDE.md` inside `reviewer/repository/` is read as
+  instructions from inside the bundle, outside the frozen protocol.
+  Demonstrated, not assumed: a planted `CLAUDE.md` made a stage open its reply
+  with "BANANA", and `--safe-mode` stopped it. Deliberately NOT solved by
+  rejecting bundles that carry one - real repositories legitimately have them,
+  and that rule would be the same over-broad proxy as the blanket symlink
+  rejection.
 - **Boundaries are enforced by software, not prompts.** The context builder
   allow-lists what each stage sees; it does not filter out what's
   forbidden. There is no filter to bypass.
