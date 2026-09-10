@@ -238,6 +238,15 @@ Known gaps, deliberately left open:
   requires `sudo`, a live run fails on permission denied regardless of the
   image. `DockerRunner.DockerPath` is injectable but `bench` exposes no flag
   for it.
+- **The pilot cohort's cases all predate the reviewer models' training cutoff**, and no
+  post-cutoff control arm is reachable from the dataset (0 of 1,667 candidates qualify).
+  Contamination was probed rather than assumed:
+  [`docs/contamination-probe-pilot-v1.md`](docs/contamination-probe-pilot-v1.md) records
+  the method and results. Short version - no evidence of incident-level memorisation on
+  opus, which is the only arm where the probe is valid; haiku and sonnet are unmeasured
+  because they fail its false-negative guard. Read that document before treating any
+  cohort result as clean, and before designing a similar probe: it also records how a
+  first attempt produced ten identical refusals that would have read as a clean result.
 - Budget bounds are only partly preventable, because neither vendor CLI has
   a timeout or token flag. `max_wall_clock_seconds` is enforced by the
   orchestrator and `max_cost_usd` by claude alone; the token and tool-call
