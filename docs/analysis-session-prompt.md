@@ -1,8 +1,7 @@
-# Prompt: cohort analysis assistant
+# Cohort analysis session
 
-Paste the block below into a fresh session, in `/home/alex/repos/engine-runner`.
-
----
+Read this as your instructions. Work in `/home/alex/repos/engine-runner`.
+(If you are a human: paste this file, or point an agent at it.)
 
 You are helping me read the results of a staged code-review benchmark. I am
 the decision-maker; your job is to help me see what is actually in the data
@@ -56,12 +55,26 @@ this is. Quote the text — do not summarise it away.
 `docs/reading-results.md` documents the result tree, the fields in each
 stage's output, and working jq commands. Read it first.
 
+**Everything you need is in two places**, and neither leaks anything:
+`build/results/frr-*/` (the sealed runs) and, for each case, the
+`reviewer/` directory of its bundle under
+`/home/alex/repos/miner/output/frr-pilot-cohort/case-<id>/` — that is what the
+reviewer itself was given, so reading it puts you in exactly the reviewer's
+position and no further.
+
 Runs are `build/results/frr-*/`. For any finding, trace it through:
 `stages/reasoner-1/review-a.json` (the claim and its evidence), then
 `stages/reasoner-2/review-b.json` (`causal_chain`, `rejection_reason`,
 `narrowed_description`, `proposed_test`), then
 `stages/reasoner-3/review-c.json` (`rationale`, `falsification_attempt`,
 `new_findings`).
+
+To go from a run to its bundle, read `case_id` out of the run itself — never
+from the cohort document:
+
+```bash
+jq -r .case_id build/results/frr-83d945a6/run.json   # -> case-83d945a6dd4e5785
+```
 
 The code each finding cites is in the bundle at
 `/home/alex/repos/miner/output/frr-pilot-cohort/case-<id>/reviewer/` — the
@@ -71,12 +84,26 @@ misquotes the source is worth more to me than any summary.
 
 ## Hard rules
 
-1. **Never open any `*-evaluator-only/` directory.** Those hold ground truth —
-   which cases contain a real defect and what it was. If you read them you
-   cannot honestly judge whether a reviewer's reasoning stands on its own, and
-   your analysis becomes worthless to me.
+1. **Do not read any of these. They contain the answer key.**
+
+   | Path | What it leaks |
+   |---|---|
+   | `*-evaluator-only/` under the cohort bundles | the corrective commits — what the real defect was |
+   | `tmp/frr-pilot-v1-cohort.md` | a **Positives / Negatives** split listing which case IDs contain a real defect |
+   | `/home/alex/data` | raw mined data and oracle bundles |
+   | anything in `/home/alex/repos/miner` outside a case's `reviewer/` directory | selection rationale and retrospective signal counts |
+
+   `docs/reading-results.md` mentions the cohort document as the place the
+   PR↔case mapping lives. **Do not follow that pointer.** You do not need to
+   know which PR a run is; you need to know whether its reasoning holds.
+
+   If you read any of these, say so immediately and stop. An analysis produced
+   after seeing ground truth is worthless to me, and I would rather lose the
+   session than trust a contaminated read.
+
 2. **Do not ask me which cases have real defects, and if I let it slip,
-   ignore it.** Same reason.
+   ignore it.** Same reason. If I start describing what a case "really" was,
+   tell me to stop.
 3. **You cannot conclude whether any finding is correct.** No oracle scoring
    exists yet. You can judge whether reasoning is sound, whether evidence
    matches the code, and whether stages added anything. You cannot judge

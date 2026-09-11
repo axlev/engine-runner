@@ -34,6 +34,12 @@ without leaking which change is under review.
 The mapping lives on the evaluator side only, in the cohort document's PR↔case
 table (`tmp/frr-pilot-v1-cohort.md` for the FRR pilot).
 
+> **If you are analysing reviews, do not open that document.** Alongside the
+> PR↔case table it carries a Positives / Negatives split naming which cases
+> contain a real defect. Reading it means you can no longer judge whether a
+> reviewer's reasoning stands on its own. Use `run.json`'s `case_id` to find a
+> bundle; you never need the PR number.
+
 ## Start here: the whole cohort at a glance
 
 ```bash
