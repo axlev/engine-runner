@@ -235,6 +235,10 @@ has been read. If a result needs investigating, the tree must still exist.
 
 ## Current state
 
+How to read a sealed run — what each artifact says and how to trace a finding
+through all three stages — is in
+[`docs/reading-results.md`](docs/reading-results.md).
+
 The work queue lives in [`docs/backlog.md`](docs/backlog.md) — what is left, in
 what order, and why that order. Update its Status column in place rather than
 tracking work here. This section records gaps that are settled decisions; the
