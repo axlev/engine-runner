@@ -51,8 +51,8 @@ discovered on case 1, not case 7.
 |---|---|---|---|
 | 1.1 | Verify the reasoner-3 disposition fix | **Verified** | Verified on the real FRR case rather than the synthetic one: reasoner-2 rejected the single finding, reasoner-3 tried three angles to overturn that rejection, failed, and wrote **`REJECTED`** — giving `rejected_by_c: 1`. Before `6fcda0e` it would have written `CONFIRMED` meaning "B's verdict survived" and been scored as a real defect. |
 | 1.2 | Probe the 3 replacement negatives | **Verified** | All three probed on opus: `NO RECOGNITION`, with the Heartbleed false-negative guard firing in the same batch so the nulls are reports of absence rather than refusals. The cohort is now fully covered — 7 positives and 3 negatives. |
-| 1.3 | Run 10 cases | **Absent** | 30 stages. **Plan around OAuth session limits** — a subscription token is rate-limited, not metered, so a cohort will stall partway and need resuming across reset windows. An API key removes that failure mode entirely. |
-| 1.4 | Manual inspection | **Absent** | ~40 findings; tractable by hand. This is the input to Phase 2's design, not a formality. |
+| 1.3 | Run 10 cases | **Integrated** | **All ten completed**, $20.64, 1.8h of stage time, 19 findings. Results in [`cohort-pilot-v1-results.md`](cohort-pilot-v1-results.md); sealed trees stay in `build/` and are never committed. Stalled on OAuth session limits three times and resumed across resets, as expected for a rate-limited subscription token. |
+| 1.4 | Manual inspection | **Needs a decision** | 19 findings, tractable by hand. Prompt ready at [`analysis-session-prompt.md`](analysis-session-prompt.md). **Reasoner-3 changed 0 of 19 dispositions and added 0 findings**, so its contribution to the finding set is provably nil without any oracle — what remains is whether that was genuine failed falsification or rubber-stamping, answerable only by reading its rationales. |
 
 ## Phase 2 — the judge
 
