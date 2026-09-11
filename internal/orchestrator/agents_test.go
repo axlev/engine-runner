@@ -41,7 +41,7 @@ func TestLoadFixtureAgentSet(t *testing.T) {
 // even though it is not runnable yet (no adapter image exists). A malformed
 // real agent set would otherwise only be discovered on the first live run.
 func TestLoadRealAgentSet(t *testing.T) {
-	for _, arm := range []string{"opus", "sonnet", "haiku"} {
+	for _, arm := range []string{"opus", "sonnet", "haiku", "fable"} {
 		t.Run(arm, func(t *testing.T) {
 			set, err := LoadAgentSet("../../configs/agents/" + arm + ".yaml")
 			if err != nil {

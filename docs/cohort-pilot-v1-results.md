@@ -75,6 +75,38 @@ finding set was nil.
   fields — see `analysis-session-prompt.md`.
 - Contamination was probed, not assumed: `contamination-probe-pilot-v1.md`.
 
+## The null may be about sonnet, not about staging
+
+Every instance of reasoner-3 contributing anything, across every run ever
+made, was on **opus**:
+
+| run | arm | what reasoner-3 did |
+|---|---|---|
+| `arm-opus-1` | opus | contributed **2 new findings** |
+| `tlv-opus-1` | opus | **overturned a rejection** (B `r1` → C `c2`) |
+| 14 others | haiku, sonnet | nothing, in any run |
+
+0 of 14 on the weaker arms; 2 of 2 on opus. The plausible mechanism is that
+adversarial verification needs enough capability to construct a genuine
+falsification, and that a weaker model can only re-read stage 2's chain and
+agree with it.
+
+**This cohort was run on sonnet on my recommendation**, argued from a
+ceiling-effect worry — that too strong a model would find everything in stage
+1 and leave no increment to measure. That was flagged at the time as a guess
+rather than a measurement, and the data points the other way: opus is not the
+arm where staging has no room, it is the only arm where staging did anything.
+
+So the headline null above may be a property of **the arm**, not of the
+pipeline. Re-running the cohort on opus (~$60, reachable on the current
+token, no comparability caveat) tests that directly, and gates everything
+downstream including whether the judge is worth building. `fable.yaml` exists
+as a second strong arm for the same question; its cost is uncalibrated.
+
+Caveats: n=2 for opus, both on synthetic fixtures rather than real FRR cases.
+Suggestive, not established. And it does not rescue stage 3 — it says only
+that the wrong arm may have been measured.
+
 ## Hypotheses this raises
 
 Ranked by how cheaply each can be falsified.

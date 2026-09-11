@@ -1,0 +1,85 @@
+# Vendor binding: claude, fable-5.1. The other strong arm.
+#
+# Added to test whether reasoner-3's nullity is a property of the DESIGN or of
+# the MODEL. Across every run so far, stage 3 contributed something only on
+# opus - 2 of 2 opus runs, 0 of 14 haiku and sonnet runs - which suggests
+# adversarial verification needs enough capability to construct a real
+# falsification, and that a weaker model can only re-read stage 2 and agree.
+# Fable is a second point on that capability curve.
+#
+# REQUIRES A SUBSCRIPTION THAT INCLUDES IT. On a plan without Fable credits
+# every call returns "Fable 5.1 requires usage credits" as a clean error with
+# no spend, so a misconfigured run fails fast rather than silently falling
+# back to another model.
+#
+# COST IS UNCALIBRATED. A trivial one-word call cost $0.0633, against roughly
+# $0.03 for opus - but a trivial call is dominated by system-prompt caching
+# and is a poor predictor of a real stage. Measure one case before committing
+# to a cohort.
+#
+# NOT MIXABLE WITHIN A COHORT: a cohort runs entirely on one arm.
+
+adapter: claude
+model: claude-fable-5-1
+
+# low | medium | high | xhigh | max, verified against `claude --help`.
+# Note "standard" is NOT a valid level.
+reasoning_level: high
+
+# BUDGETS CALIBRATED against a real FRR case, 2026-09-10 (backlog 0.3).
+# case-83d945a6dd4e5785: a +2/-0 diff over a 76 MB, 7,544-file snapshot.
+# A completed sonnet run cost $1.99 and took 668s wall clock:
+#
+#   reasoner-1  2,214,475 in   31,950 out   360s   $1.20
+#   reasoner-2    536,087 in   14,395 out   150s   $0.49
+#   reasoner-3    167,893 in   14,418 out   158s   $0.30
+#
+# Discovery dominates everything - 76% of the input and 60% of the cost.
+#
+# THE DIVISION OF LABOUR MATTERS MORE THAN THE NUMBERS. max_cost_usd is the
+# real control: it is the only bound a vendor enforces BEFORE the fact
+# (claude's --max-budget-usd), so it stops a runaway rather than reporting
+# one. The token bounds are detection-only, checked after a stage has already
+# been paid for, so they are set loose enough to catch genuine runaway and
+# nothing else. Setting them tight buys no protection and fails correct work:
+# the pre-calibration 400,000 came from 7-file fixtures and failed a stage
+# that had produced a valid review.
+#
+# And read max_input_tokens carefully. It sums uncached input, cache writes
+# and cache reads, and cache reads are re-billed EVERY TURN of an agentic
+# session, so it tracks TURN COUNT far more than context size. The 2.2M above
+# cost $1.20; the same volume of fresh input would cost roughly $6.60.
+# Two runs of this one case used 1.2M and 2.2M - the variance is why the
+# bound is set at several times the observed maximum rather than just above
+# it.
+
+stages:
+  # Discovery reads the diff plus surrounding code and is asked for recall,
+  # so it gets the widest tool-call allowance of the three.
+  reasoner-1:
+    budget:
+      max_input_tokens: 8000000
+      max_output_tokens: 100000
+      max_wall_clock_seconds: 900
+      max_tool_calls: 60
+      max_cost_usd: 4.00
+
+  # Evidence also receives review-a as a handoff, and builds causal chains,
+  # so it reads more and calls more tools than discovery.
+  reasoner-2:
+    budget:
+      max_input_tokens: 8000000
+      max_output_tokens: 100000
+      max_wall_clock_seconds: 900
+      max_tool_calls: 80
+      max_cost_usd: 5.00
+
+  # Verification receives both handoffs but is asked to adjudicate rather
+  # than explore, so its output allowance is smaller.
+  reasoner-3:
+    budget:
+      max_input_tokens: 8000000
+      max_output_tokens: 100000
+      max_wall_clock_seconds: 900
+      max_tool_calls: 60
+      max_cost_usd: 4.00
