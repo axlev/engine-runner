@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0.0",
+  "original": {
+    "number": 2002,
+    "repository": "synthetic/repo"
+  },
+  "stateful": {
+    "score": 0.8,
+    "category": "HIGH",
+    "matched_symbols": []
+  },
+  "retrospective": {
+    "summary_rank_score": 0.5,
+    "strong_signals": [
+      {
+        "signal_type": "FIXES_SHA",
+        "source_type": "COMMIT",
+        "source_ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "timestamp": "2024-01-02T00:00:00Z",
+        "raw_snippet": "Fixes: deadbeef",
+        "confidence": 1.0,
+        "changed_paths": [
+          "src/alpha.c",
+          "src/beta.c"
+        ]
+      }
+    ],
+    "medium_signals": [],
+    "weak_signals": [],
+    "reversal": {
+      "reversal_type": "none",
+      "path_overlaps": [
+        {
+          "path": "src/alpha.c",
+          "original_added_lines": 10,
+          "original_removed_lines": 4,
+          "later_removed_matching_original_additions": 3,
+          "later_added_matching_original_removals": 0,
+          "lineage_supported_removed_overlap_count": 3
+        },
+        {
+          "path": "src/beta.c",
+          "original_added_lines": 10,
+          "original_removed_lines": 4,
+          "later_removed_matching_original_additions": 11,
+          "later_added_matching_original_removals": 0,
+          "lineage_supported_removed_overlap_count": 11
+        }
+      ]
+    }
+  },
+  "provenance": {
+    "target_repo_head_sha": "0000000000000000000000000000000000000000"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0.0",
+  "original": {
+    "number": 2010,
+    "repository": "synthetic/repo"
+  },
+  "stateful": {
+    "score": 0.45,
+    "category": "MEDIUM",
+    "matched_symbols": []
+  },
+  "retrospective": {
+    "summary_rank_score": 0.5,
+    "strong_signals": [],
+    "medium_signals": [
+      {
+        "signal_type": "SAME_FUNCTION_FIX",
+        "source_type": "COMMIT",
+        "source_ref": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "timestamp": "2024-01-03T00:00:00Z",
+        "function_or_path": "lonely_symbol",
+        "context": "same function touched later",
+        "changed_paths": []
+      }
+    ],
+    "weak_signals": [],
+    "reversal": {
+      "reversal_type": "none",
+      "path_overlaps": []
+    }
+  },
+  "provenance": {
+    "target_repo_head_sha": "0000000000000000000000000000000000000000"
+  }
+}

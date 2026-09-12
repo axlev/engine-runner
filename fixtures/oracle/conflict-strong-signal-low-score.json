@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "original": {
+    "number": 2007,
+    "repository": "synthetic/repo"
+  },
+  "stateful": {
+    "score": 0.15,
+    "category": "LOW",
+    "matched_symbols": []
+  },
+  "retrospective": {
+    "summary_rank_score": 0.5,
+    "strong_signals": [
+      {
+        "signal_type": "FIXES_SHA",
+        "source_type": "COMMIT",
+        "source_ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "timestamp": "2024-01-02T00:00:00Z",
+        "raw_snippet": "Fixes: deadbeef",
+        "confidence": 1.0,
+        "changed_paths": [
+          "src/alpha.c"
+        ]
+      }
+    ],
+    "medium_signals": [],
+    "weak_signals": [],
+    "reversal": {
+      "reversal_type": "none",
+      "path_overlaps": []
+    }
+  },
+  "provenance": {
+    "target_repo_head_sha": "0000000000000000000000000000000000000000"
+  }
+}

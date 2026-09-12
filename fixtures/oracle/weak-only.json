@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "original": {
+    "number": 2004,
+    "repository": "synthetic/repo"
+  },
+  "stateful": {
+    "score": 0.2,
+    "category": "LOW",
+    "matched_symbols": []
+  },
+  "retrospective": {
+    "summary_rank_score": 0.5,
+    "strong_signals": [],
+    "medium_signals": [],
+    "weak_signals": [
+      {
+        "signal_type": "SAME_FILE_MODIFICATION",
+        "source_ref": "cccccccccccccccccccccccccccccccccccccccc",
+        "timestamp": "2024-01-04T00:00:00Z",
+        "file_path": "src/alpha.c"
+      },
+      {
+        "signal_type": "SAME_SYMBOL_DIFFERENT_PATH",
+        "source_ref": "cccccccccccccccccccccccccccccccccccccccc",
+        "timestamp": "2024-01-04T00:00:00Z",
+        "file_path": "src/gamma.c"
+      }
+    ],
+    "reversal": {
+      "reversal_type": "none",
+      "path_overlaps": []
+    }
+  },
+  "provenance": {
+    "target_repo_head_sha": "0000000000000000000000000000000000000000"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0.0",
+  "original": {
+    "number": 2006,
+    "repository": "synthetic/repo"
+  },
+  "stateful": {
+    "score": 0.95,
+    "category": "HIGH",
+    "matched_symbols": []
+  },
+  "retrospective": {
+    "summary_rank_score": 0.5,
+    "strong_signals": [],
+    "medium_signals": [],
+    "weak_signals": [],
+    "reversal": {
+      "reversal_type": "none",
+      "path_overlaps": []
+    }
+  },
+  "provenance": {
+    "target_repo_head_sha": "0000000000000000000000000000000000000000"
+  }
+}

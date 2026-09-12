@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0.0",
+  "original": {
+    "number": 2008,
+    "repository": "synthetic/repo"
+  },
+  "stateful": {
+    "score": 0.5,
+    "category": "MEDIUM",
+    "matched_symbols": []
+  },
+  "retrospective": {
+    "summary_rank_score": 0.5,
+    "strong_signals": [],
+    "medium_signals": [
+      {
+        "signal_type": "SAME_FUNCTION_FIX",
+        "source_type": "COMMIT",
+        "source_ref": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "timestamp": "2024-01-03T00:00:00Z",
+        "function_or_path": "alpha_init",
+        "context": "same function touched later",
+        "changed_paths": [
+          "src/alpha.c"
+        ]
+      }
+    ],
+    "weak_signals": [],
+    "reversal": {
+      "reversal_type": "none",
+      "path_overlaps": [
+        {
+          "path": "src/orphan.c",
+          "original_added_lines": 10,
+          "original_removed_lines": 4,
+          "later_removed_matching_original_additions": 5,
+          "later_added_matching_original_removals": 0,
+          "lineage_supported_removed_overlap_count": 5
+        }
+      ]
+    }
+  },
+  "provenance": {
+    "target_repo_head_sha": "0000000000000000000000000000000000000000"
+  }
+}
