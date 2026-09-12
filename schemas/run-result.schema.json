@@ -128,6 +128,14 @@
             "type": "string"
           }
         },
+        "tool_sets": {
+          "type": "object",
+          "description": "The resolved tool grant per stage. Recorded because the tool set determines what a reviewer can discover, and a default applied in code when the arm file omits the key would otherwise be invisible to every hash here.",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
         "input_checksums": {
           "type": "object",
           "additionalProperties": {
@@ -209,7 +217,12 @@
           "description": "Milliseconds the vendor CLI reports as spent in API calls, summed across attempts. Separates model time from the CLI's own overhead."
         },
         "usage": {
-          "$ref": "#/$defs/usage"
+          "$ref": "#/$defs/usage",
+          "description": "Summed across every attempt of this stage, failed attempts included, matching duration_ms. A run carrying only this field and no final_attempt_usage predates that change and holds the winning attempt's usage alone."
+        },
+        "final_attempt_usage": {
+          "$ref": "#/$defs/usage",
+          "description": "The winning attempt's usage on its own. Per-attempt is the correct denominator for a budget check, since max_cost_usd bounds one invocation rather than a whole stage."
         },
         "output_path": {
           "type": "string"

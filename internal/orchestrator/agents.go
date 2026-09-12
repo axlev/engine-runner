@@ -31,7 +31,35 @@ type AgentConfig struct {
 	Model          string       `yaml:"model"`
 	ReasoningLevel string       `yaml:"reasoning_level"`
 	Budget         BudgetConfig `yaml:"budget"`
+
+	// Tools is the reviewer's tool set, and it belongs here rather than in
+	// adapter code because it changes what a reviewer can DISCOVER, which
+	// is a capability of the arm in exactly the way the model is. It was
+	// previously hardcoded in the claude adapter, so a run that granted
+	// search and a run that did not were indistinguishable in their sealed
+	// records - the one experimental variable the fingerprint could not
+	// see. Declaring it in the arm file puts it under the arm's existing
+	// file hash for free.
+	//
+	// Never empty after LoadAgentSet: absent means defaultTools.
+	Tools []string `yaml:"tools"`
 }
+
+// defaultTools is what an arm file that says nothing about tools gets, and
+// it is deliberately the narrowest useful set - reviewers may read the
+// mounted bundle and nothing else.
+//
+// It exists so that adding this key does not invalidate the arm files that
+// runs are already sealed against: opus.yaml and sonnet.yaml carry no
+// `tools:` key, keep their current hashes, and keep their current
+// behaviour. New capability goes only in new files.
+//
+// Because this default lives in code rather than in the hashed arm file, a
+// later change to it would silently alter what an old arm file means. That
+// is why the RESOLVED set travels in RunRequest.Tools into each stage's
+// frozen request.json, and into Fingerprints.ToolSets: the audit trail
+// records what was actually granted, not a key that happened to be absent.
+var defaultTools = []string{"Read"}
 
 // AgentSet is the vendor binding for every stage of a run.
 type AgentSet map[adapters.Stage]AgentConfig
@@ -56,6 +84,7 @@ type agentSetFile struct {
 	Model          string       `yaml:"model"`
 	ReasoningLevel string       `yaml:"reasoning_level"`
 	Budget         BudgetConfig `yaml:"budget"`
+	Tools          []string     `yaml:"tools"`
 
 	Stages map[string]agentStageFile `yaml:"stages"`
 }
@@ -72,6 +101,7 @@ type agentStageFile struct {
 	Model          *string       `yaml:"model"`
 	ReasoningLevel *string       `yaml:"reasoning_level"`
 	Budget         *BudgetConfig `yaml:"budget"`
+	Tools          *[]string     `yaml:"tools"`
 }
 
 // LoadAgentSet reads one arm file and resolves it into a per-stage binding.
@@ -102,6 +132,7 @@ func LoadAgentSet(path string) (AgentSet, error) {
 			Model:          file.Model,
 			ReasoningLevel: file.ReasoningLevel,
 			Budget:         file.Budget,
+			Tools:          file.Tools,
 		}
 
 		if override, ok := file.Stages[string(stage)]; ok {
@@ -121,6 +152,21 @@ func LoadAgentSet(path string) (AgentSet, error) {
 			if override.Budget != nil {
 				cfg.Budget = *override.Budget
 			}
+			if override.Tools != nil {
+				cfg.Tools = *override.Tools
+			}
+		}
+
+		// An explicitly empty list is rejected rather than quietly
+		// defaulted: `tools: []` reads as a deliberate "no tools", which
+		// would leave a reviewer unable to open the bundle at all, and
+		// silently substituting Read would hide that mistake. Absent is
+		// the only spelling that means "use the default".
+		if cfg.Tools != nil && len(cfg.Tools) == 0 {
+			return nil, fmt.Errorf("orchestrator: agent set %s: stage %s has an empty tools list; omit the key to get %v", path, stage, defaultTools)
+		}
+		if cfg.Tools == nil {
+			cfg.Tools = append([]string(nil), defaultTools...)
 		}
 
 		if cfg.Adapter == "" {

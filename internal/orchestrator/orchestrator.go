@@ -182,7 +182,7 @@ func (o *Orchestrator) Run(ctx context.Context, runID, caseID, bundleRoot string
 	// record still says which protocol, prompts and schemas were in play
 	// when it was rejected. Validation's diagnosis stays the reported
 	// error either way - it is the more actionable one.
-	fp, fpErr := computeStaticFingerprints(o.ProtocolPath, o.AgentSetPath, o.RepoRoot, bundleRoot, o.Protocol)
+	fp, fpErr := computeStaticFingerprints(o.ProtocolPath, o.AgentSetPath, o.RepoRoot, bundleRoot, o.Protocol, o.AgentSet)
 	if fpErr == nil {
 		outcome.Fingerprints = fp
 	}
@@ -221,6 +221,12 @@ func (o *Orchestrator) Run(ctx context.Context, runID, caseID, bundleRoot string
 		if len(records) > 0 {
 			last := records[len(records)-1]
 			outcome.Fingerprints.AdapterVersions[string(stage)] = last.Result.Adapter + "/" + last.Result.Version
+			if d := last.Result.ImageDigest; d != "" {
+				if outcome.Fingerprints.ContainerDigests == nil {
+					outcome.Fingerprints.ContainerDigests = map[string]string{}
+				}
+				outcome.Fingerprints.ContainerDigests[string(stage)] = d
+			}
 		}
 		if err != nil {
 			outcome.Status = "failed"
@@ -297,6 +303,7 @@ func (o *Orchestrator) runStageWithRetries(
 			Model:            agentCfg.Model,
 			ReasoningLevel:   agentCfg.ReasoningLevel,
 			Budget:           agentCfg.Budget.toAdapterBudget(),
+			Tools:            agentCfg.Tools,
 			Environment: map[string]string{
 				adapters.AttemptEnvKey: strconv.Itoa(attempt),
 			},

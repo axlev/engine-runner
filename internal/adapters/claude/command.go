@@ -3,6 +3,7 @@ package claude
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 
 	"github.com/axlev/engine-runner/internal/adapters"
 )
@@ -58,9 +59,22 @@ func buildClaudeArgs(req adapters.RunRequest, creds Credentials, promptText stri
 	args = append(args, "-p", "--output-format", "json")
 
 	// Replace the tool set entirely rather than layering an allow-list on
-	// top of an unknown default (--tools, not --allowed-tools): the model
-	// may read the mounted reference files and nothing else.
-	args = append(args, "--tools", "Read")
+	// top of an unknown default (--tools, not --allowed-tools), so the
+	// grant is exactly what the arm declared and nothing inherited.
+	//
+	// The set comes from the arm config via the request. It used to be
+	// hardcoded "Read" here, which meant reviewer capability was invisible
+	// to the fingerprint: a run with search and a run without produced
+	// indistinguishable sealed records. The orchestrator has already
+	// resolved the arm's default, so an empty slice here means a caller
+	// built a RunRequest by hand rather than through LoadAgentSet - fall
+	// back to the narrowest set rather than inheriting the CLI's default,
+	// which would silently widen capability.
+	tools := req.Tools
+	if len(tools) == 0 {
+		tools = []string{"Read"}
+	}
+	args = append(args, "--tools", strings.Join(tools, ","))
 
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)

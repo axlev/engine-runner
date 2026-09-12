@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/axlev/engine-runner/internal/adapters"
@@ -39,6 +40,17 @@ type Adapter struct {
 	// by the caller's context, not a container flag - the CLI itself has
 	// no --timeout flag (verified: it does not exist in `claude --help`).
 	Limits runner.ResourceLimits
+
+	// Memoised immutable properties of Image, resolved on first use. See
+	// imageVersion for why caching these does not make the adapter
+	// stateful in the sense the interface prohibits.
+	versionOnce sync.Once
+	version     string
+	versionErr  error
+
+	digestOnce sync.Once
+	digest     string
+	digestErr  error
 }
 
 // New constructs an Adapter, detecting credentials via lookup (nil means
@@ -67,17 +79,60 @@ func (a *Adapter) claudePath() string {
 	return a.ClaudePath
 }
 
-// Version reports the local claude CLI's version string. This queries
-// whatever `claude` binary is on the host, not the one baked into Image -
-// an acceptable interim gap while no pinned container image exists yet;
-// once one does, Version should be changed to query the image instead so
-// the reported version matches what Run actually executed.
+// Version reports the claude CLI version this adapter is bound to.
+//
+// When an Image is configured it queries the CLI INSIDE that image, which
+// is the only answer that describes what Run actually executes. The host
+// binary is not a substitute and recording it would be actively
+// misleading: on the machine this was written, the host CLI was 2.1.269
+// while the pinned image carried 2.1.263, so a host-derived version would
+// have attributed six patch releases of behaviour to the wrong code. That
+// is worse than the empty string it replaces, because an auditor would
+// believe it.
+//
+// With no Image (a bare Adapter used for a metadata check, as in tests) it
+// falls back to the host binary, which is then genuinely what it is bound
+// to.
 func (a *Adapter) Version(ctx context.Context) (string, error) {
-	out, err := exec.CommandContext(ctx, a.claudePath(), "--version").Output()
-	if err != nil {
-		return "", fmt.Errorf("claude: getting version: %w", err)
+	if a.Image == "" {
+		out, err := exec.CommandContext(ctx, a.claudePath(), "--version").Output()
+		if err != nil {
+			return "", fmt.Errorf("claude: getting version: %w", err)
+		}
+		return strings.TrimSpace(string(out)), nil
 	}
-	return strings.TrimSpace(string(out)), nil
+	return a.imageVersion(ctx)
+}
+
+// imageVersion runs `claude --version` inside Image with no network and no
+// credentials. Memoised because Run needs it on every attempt and the
+// answer cannot change for a fixed image: a container launch per attempt
+// would add seconds to every stage to re-derive a constant.
+//
+// The memo holds an immutable property of the image, not anything observed
+// during a run, so it does not breach the adapter's "stateless across
+// calls" contract - nothing one Run sees can influence another.
+func (a *Adapter) imageVersion(ctx context.Context) (string, error) {
+	a.versionOnce.Do(func() {
+		out, err := exec.CommandContext(ctx, a.Runner.DockerPathOrDefault(),
+			"run", "--rm", "--network", "none", "--entrypoint", "claude",
+			a.Image, "--version").Output()
+		if err != nil {
+			a.versionErr = fmt.Errorf("claude: getting version from image %s: %w", a.Image, err)
+			return
+		}
+		a.version = strings.TrimSpace(string(out))
+	})
+	return a.version, a.versionErr
+}
+
+// imageDigest resolves Image to its immutable content digest, memoised for
+// the same reason as imageVersion.
+func (a *Adapter) imageDigest(ctx context.Context) (string, error) {
+	a.digestOnce.Do(func() {
+		a.digest, a.digestErr = a.Runner.ImageDigest(ctx, a.Image)
+	})
+	return a.digest, a.digestErr
 }
 
 func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.RunResult, error) {
@@ -131,6 +186,19 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 		AuthMode: string(a.Credentials.Kind),
 	}
 
+	// Provenance is attached even to a failed attempt: a stage that died
+	// at its budget cap is still evidence, and knowing which image and CLI
+	// version produced the failure is part of reading it. Neither lookup
+	// can fail the run - a missing digest degrades the audit trail, while
+	// aborting here would discard a result that was already paid for, so
+	// the error is swallowed and the field left empty.
+	if v, err := a.Version(ctx); err == nil {
+		base.Version = v
+	}
+	if d, err := a.imageDigest(ctx); err == nil {
+		base.ImageDigest = d
+	}
+
 	if runErr != nil && len(result.Stdout) == 0 {
 		// The container never produced a response envelope at all (e.g.
 		// context cancellation, or docker itself failed to start it) -
@@ -159,7 +227,7 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 		// uncheckable rather than passing it against a phantom 0.
 	}
 	if resp.IsError {
-		return base, fmt.Errorf("claude: %s", resp.Result)
+		return base, fmt.Errorf("claude: %s", resp.errorMessage())
 	}
 
 	outDir := filepath.Join(req.WorkspacePath, "output")

@@ -21,6 +21,12 @@ func (d *DockerRunner) dockerPath() string {
 	return d.DockerPath
 }
 
+// DockerPathOrDefault exposes the resolved docker executable so callers that
+// need a one-shot docker invocation this package does not model - such as
+// reading a version string out of an image - use the same binary as Run
+// rather than assuming "docker" is on PATH.
+func (d *DockerRunner) DockerPathOrDefault() string { return d.dockerPath() }
+
 // Available reports whether this DockerRunner can actually reach a Docker
 // daemon right now. Use it to skip live container execution - in tests or
 // otherwise - rather than failing confusingly or silently no-op'ing in an
@@ -28,6 +34,26 @@ func (d *DockerRunner) dockerPath() string {
 func (d *DockerRunner) Available(ctx context.Context) bool {
 	cmd := exec.CommandContext(ctx, d.dockerPath(), "version")
 	return cmd.Run() == nil
+}
+
+// ImageDigest reports the immutable content digest of a local image, e.g.
+// "sha256:d4c96baa...". It reads the image's own ID rather than a
+// RepoDigest: a RepoDigest exists only for images pulled from or pushed to
+// a registry, and the adapter images here are built locally, so asking for
+// one would return empty for exactly the images this project uses.
+//
+// A tag is not provenance. `adapter-claude:2.1.263` can be rebuilt against
+// different content and keep the tag, so a sealed result naming only a tag
+// cannot prove what executed. This can.
+func (d *DockerRunner) ImageDigest(ctx context.Context, image string) (string, error) {
+	cmd := exec.CommandContext(ctx, d.dockerPath(), "image", "inspect", "--format", "{{.Id}}", image)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("docker: inspecting image %s: %w (stderr: %s)", image, err, bytes.TrimSpace(stderr.Bytes()))
+	}
+	return string(bytes.TrimSpace(stdout.Bytes())), nil
 }
 
 // Result is the outcome of one container execution.

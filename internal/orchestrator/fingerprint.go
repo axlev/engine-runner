@@ -25,6 +25,15 @@ type Fingerprints struct {
 	ContainerDigests  map[string]string `json:"container_digests,omitempty"`
 	InputChecksums    map[string]string `json:"input_checksums"`
 
+	// ToolSets records the RESOLVED tool grant per stage. The arm config
+	// hash already covers a `tools:` key that is present, but not a
+	// default applied in code when the key is absent - so without this a
+	// change to defaultTools would alter what every existing arm file
+	// means while every fingerprint stayed identical. Recording the
+	// resolved value makes the grant auditable regardless of where it came
+	// from.
+	ToolSets map[string][]string `json:"tool_sets,omitempty"`
+
 	// BoundaryWaivers lists the paths this run's protocol waived from the
 	// oracle-name heuristic. It belongs in the fingerprints because a
 	// waiver weakens a contamination check: someone auditing the result
@@ -47,13 +56,20 @@ func sha256HexFile(path string) (string, error) {
 // prospective bundle's own checksums.sha256 verbatim. It does not read
 // AdapterVersions - those are only known once stages have actually run, and
 // are filled in separately from the run's attempt records.
-func computeStaticFingerprints(protocolPath, agentSetPath, repoRoot, bundleRoot string, protocol *Protocol) (Fingerprints, error) {
+func computeStaticFingerprints(protocolPath, agentSetPath, repoRoot, bundleRoot string, protocol *Protocol, agents AgentSet) (Fingerprints, error) {
 	fp := Fingerprints{
 		SchemaVersions:    map[string]string{},
 		PromptHashes:      map[string]string{},
 		AdapterVersions:   map[string]string{},
 		AgentConfigHashes: map[string]string{},
 		InputChecksums:    map[string]string{},
+		ToolSets:          map[string][]string{},
+	}
+
+	for _, stage := range stageOrder {
+		if tools := agents[stage].Tools; len(tools) > 0 {
+			fp.ToolSets[string(stage)] = append([]string(nil), tools...)
+		}
 	}
 
 	protoHash, err := sha256HexFile(protocolPath)

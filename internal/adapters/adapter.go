@@ -96,6 +96,18 @@ type RunRequest struct {
 	ReasoningLevel string `json:"reasoning_level,omitempty"`
 	Budget         Budget `json:"budget"`
 
+	// Tools is the resolved tool set this stage may use, from the arm
+	// config. It is recorded in request.json rather than left to adapter
+	// code because it determines what the reviewer can discover: a
+	// reviewer that can search a tree reaches conclusions one that can
+	// only open named paths cannot. Adapters whose vendor has no tool
+	// concept ignore it.
+	//
+	// Resolved, never defaulted here: the orchestrator has already applied
+	// the arm's default, so this field says what was actually granted even
+	// when the arm file was silent.
+	Tools []string `json:"tools,omitempty"`
+
 	// Environment carries scoped, non-secret values into the isolated
 	// execution. Credentials are injected by the runner as scoped
 	// secrets and must never appear here or be echoed into RunResult.
@@ -123,6 +135,14 @@ type RunResult struct {
 	Usage               Usage  `json:"usage"`
 	Adapter             string `json:"adapter"`
 	Version             string `json:"version"`
+
+	// ImageDigest is the immutable content digest of the container image
+	// this attempt actually executed in, e.g.
+	// "sha256:d4c96baa...". A tag is not sufficient provenance: a tag can
+	// be repointed at new content, so two runs recording the same tag may
+	// have run different code. Empty for adapters that do not execute in
+	// a container.
+	ImageDigest string `json:"image_digest,omitempty"`
 
 	// AuthMode records WHICH KIND of credential produced this result, never
 	// the credential itself. It matters because the kind changes the

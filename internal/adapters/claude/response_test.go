@@ -1,6 +1,9 @@
 package claude
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // capturedUnauthenticatedResponse is the exact, unmodified stdout from a
 // real `claude --bare -p "say hi" --output-format json` invocation with no
@@ -63,5 +66,50 @@ func TestParseResponseConstructedSuccessEnvelope(t *testing.T) {
 func TestParseResponseInvalidJSONIsError(t *testing.T) {
 	if _, err := parseResponse([]byte("not json")); err == nil {
 		t.Fatalf("expected an error for non-JSON stdout")
+	}
+}
+
+// The envelope below is the real shape a budget kill produces, captured by
+// forcing one against the pinned image with --max-budget-usd 0.002. Note
+// `result` is null: this is exactly the case that used to render as the
+// bare string "claude: " and left two narrow-arm failures undiagnosable in
+// their sealed records.
+func TestErrorMessageUsesSubtypeWhenResultIsNull(t *testing.T) {
+	const killed = `{"is_error":true,"subtype":"error_max_budget_usd",` +
+		`"terminal_reason":"budget_exhausted","result":null,` +
+		`"total_cost_usd":0.005638,"num_turns":1}`
+
+	resp, err := parseResponse([]byte(killed))
+	if err != nil {
+		t.Fatalf("parseResponse: %v", err)
+	}
+	msg := resp.errorMessage()
+	for _, want := range []string{"error_max_budget_usd", "budget_exhausted", "0.0056"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("errorMessage() = %q, want it to mention %q", msg, want)
+		}
+	}
+}
+
+func TestErrorMessagePrefersVendorProse(t *testing.T) {
+	resp, err := parseResponse([]byte(
+		`{"is_error":true,"subtype":"error_auth","result":"Not logged in"}`))
+	if err != nil {
+		t.Fatalf("parseResponse: %v", err)
+	}
+	if got := resp.errorMessage(); got != "Not logged in" {
+		t.Errorf("errorMessage() = %q, want the vendor's own message verbatim", got)
+	}
+}
+
+// An error with no reason codes at all must still say something, or the
+// original bug returns in a new spelling.
+func TestErrorMessageNeverEmpty(t *testing.T) {
+	resp, err := parseResponse([]byte(`{"is_error":true,"result":null}`))
+	if err != nil {
+		t.Fatalf("parseResponse: %v", err)
+	}
+	if strings.TrimSpace(resp.errorMessage()) == "" {
+		t.Errorf("errorMessage() must never be empty for a failed run")
 	}
 }

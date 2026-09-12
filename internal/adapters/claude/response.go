@@ -3,6 +3,7 @@ package claude
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // response is `claude --output-format json`'s envelope shape. Every field
@@ -18,6 +19,24 @@ type response struct {
 	TotalCostUSD float64 `json:"total_cost_usd"`
 	SessionID    string  `json:"session_id"`
 	NumTurns     int     `json:"num_turns"`
+
+	// Subtype and TerminalReason are the CLI's machine-readable account of
+	// WHY a run ended, and they are the only account available when the
+	// run was killed rather than answered.
+	//
+	// The comment on parseResponse used to claim Result always carries a
+	// human-readable message when IsError is true. That holds for an auth
+	// failure but not for a budget kill, where the envelope is
+	// `{"is_error":true, "subtype":"error_max_budget_usd",
+	// "terminal_reason":"budget_exhausted", "result":null}` - verified by
+	// forcing one against the pinned image. Because only Result was
+	// modeled, every budget-killed stage in the narrow opus arm recorded
+	// its failure as the string "claude: " and nothing else, so the sealed
+	// record could not say why the run died. Two cases were affected and
+	// one of them, opus-de6d5d30, retried into a sealed `completed` result
+	// that looked indistinguishable from a clean run.
+	Subtype        string `json:"subtype"`
+	TerminalReason string `json:"terminal_reason"`
 
 	// The CLI's own timing. Kept because the split is what our two
 	// timestamps cannot give: DurationAPIMS is time spent in API calls,
@@ -49,16 +68,45 @@ type response struct {
 }
 
 // parseResponse decodes one `claude --output-format json` stdout payload.
-// When IsError is true, Result carries a human-readable error message
-// (e.g. "Not logged in · Please run /login") rather than review
-// content - callers must check IsError before treating Result as the
-// stage's structured output.
+// When IsError is true the stage produced no review, and callers must check
+// IsError before treating Result as structured output. Result MAY carry a
+// human-readable message (e.g. "Not logged in · Please run /login") but is
+// null for at least the budget-kill case, so use errorMessage rather than
+// Result to describe a failure.
 func parseResponse(stdout []byte) (response, error) {
 	var r response
 	if err := json.Unmarshal(stdout, &r); err != nil {
 		return response{}, fmt.Errorf("claude: parsing response JSON: %w", err)
 	}
 	return r, nil
+}
+
+// errorMessage renders the best available account of why a run failed,
+// preferring the vendor's own prose and falling back to its machine-readable
+// reason codes plus the spend that triggered the stop.
+//
+// The cost is included because for a budget kill it is the whole diagnosis,
+// and because max_cost_usd is not a hard ceiling - a probe against the
+// pinned image recorded $0.005638 against a $0.002 cap - so the recorded
+// figure legitimately exceeds the bound and a reader needs to see by how
+// much rather than infer it.
+func (r response) errorMessage() string {
+	if msg := strings.TrimSpace(r.Result); msg != "" {
+		return msg
+	}
+	var parts []string
+	if r.Subtype != "" {
+		parts = append(parts, r.Subtype)
+	}
+	if r.TerminalReason != "" && r.TerminalReason != r.Subtype {
+		parts = append(parts, r.TerminalReason)
+	}
+	if len(parts) == 0 {
+		// The CLI reported an error and named no reason for it. Say that,
+		// rather than returning "" and producing a bare "claude: " again.
+		parts = append(parts, "vendor reported an error with no subtype or terminal_reason")
+	}
+	return fmt.Sprintf("%s (cost $%.4f, %d turns)", strings.Join(parts, "/"), r.TotalCostUSD, r.NumTurns)
 }
 
 // TotalInputTokens is every input token the stage was billed for: the

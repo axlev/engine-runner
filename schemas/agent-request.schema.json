@@ -36,6 +36,12 @@
     "model": { "type": "string", "minLength": 1 },
     "reasoning_level": { "type": "string" },
     "budget": { "$ref": "#/$defs/budget" },
+    "tools": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "description": "The resolved tool set this stage may use, from the arm config. Recorded per request because it bounds what the reviewer could discover: a stage that can search a tree can reach conclusions one that can only open named paths cannot."
+    },
     "environment": {
       "type": "object",
       "additionalProperties": { "type": "string" },

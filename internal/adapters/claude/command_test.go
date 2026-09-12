@@ -40,6 +40,31 @@ func TestBuildClaudeArgsIncludesOutputFormatAndToolRestriction(t *testing.T) {
 	}
 }
 
+// The tool set is an experimental variable, not an adapter constant: a
+// reviewer that can search reaches conclusions one that can only open named
+// paths cannot. These two tests are what stop it silently reverting to a
+// hardcoded grant that no fingerprint would record.
+func TestBuildClaudeArgsUsesRequestedToolSet(t *testing.T) {
+	req := adapters.RunRequest{Tools: []string{"Read", "Grep", "Glob"}}
+	args := buildClaudeArgs(req, Credentials{Kind: CredentialAPIKey}, "prompt")
+
+	if !containsSubsequence(args, []string{"--tools", "Read,Grep,Glob"}) {
+		t.Errorf("expected the request's tool set to reach --tools, got %v", args)
+	}
+	if containsSubsequence(args, []string{"--tools", "Read"}) {
+		t.Errorf("expected the hardcoded narrow grant to be gone, got %v", args)
+	}
+}
+
+func TestBuildClaudeArgsFallsBackToNarrowestToolSet(t *testing.T) {
+	// A hand-built request that never went through LoadAgentSet must not
+	// inherit the CLI's own default, which would widen capability silently.
+	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialAPIKey}, "prompt")
+	if !containsSubsequence(args, []string{"--tools", "Read"}) {
+		t.Errorf("expected a tool-less request to fall back to Read, got %v", args)
+	}
+}
+
 func TestBuildClaudeArgsModelAndEffortAndBudget(t *testing.T) {
 	req := adapters.RunRequest{Model: "claude-opus-5", ReasoningLevel: "xhigh", Budget: adapters.Budget{MaxCostUSD: 1.25}}
 	args := buildClaudeArgs(req, Credentials{Kind: CredentialAPIKey}, "prompt")
