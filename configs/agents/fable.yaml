@@ -1,11 +1,34 @@
 # Vendor binding: claude, fable-5.1. The other strong arm.
 #
 # Added to test whether reasoner-3's nullity is a property of the DESIGN or of
-# the MODEL. Across every run so far, stage 3 contributed something only on
-# opus - 2 of 2 opus runs, 0 of 14 haiku and sonnet runs - which suggests
-# adversarial verification needs enough capability to construct a real
-# falsification, and that a weaker model can only re-read stage 2 and agree.
-# Fable is a second point on that capability curve.
+# the MODEL, as a second point on that capability curve.
+#
+# THE ORIGINAL RATIONALE FOR THIS ARM HAS BEEN REFUTED. It read: stage 3
+# contributed something only on opus (2 of 2 opus runs, 0 of 14 haiku and
+# sonnet), which suggests "a weaker model can only re-read stage 2's chain and
+# agree with it". The completed cohorts disprove the mechanism. Sonnet's stage
+# 3 constructs genuine multi-branch falsifications - `c21d519d` f1 traces five
+# construction paths to close a rejection, and `3a74a3a2` f1 states it went
+# further than stage 2 by checking hook consumers. Both arms attempt
+# falsification; only the overturn rate differs.
+#
+# AND THAT RATE DIFFERENCE IS NOT ESTABLISHED. Per finding, under the adopted
+# label-or-claim rule: sonnet 1/19, opus-narrow 7/41, opus-wide 5/49. Fisher
+# two-tailed on the first two is p = 0.416 - indistinguishable from chance.
+# Opus would need 12 of 41 to clear p < 0.05.
+#
+# SO DO NOT RUN THIS ARM TO SETTLE THE CAPABILITY QUESTION YET. Every figure
+# above is a B->C measurement, and the increment this project reports is A->C
+# (reading-results.md). Two demonstrations exist of real improvement that
+# B->C cannot see: opus-wide resolved the zclient.h enum at stage 2 and scored
+# zero movement, and the ASLA-leak qualification was already present at stage
+# 1 in both arms. Worse, opus-wide's stronger stage 2 produced ZERO sub-moves
+# against narrow's four - under this metric a better stage 2 scores worse.
+#
+# A third capability point measured with a metric that cannot see improvement
+# buys nothing. Wire the oracle (backlog 2.2/2.4) first, so a fable run is
+# scored on whether its verdicts are CORRECT rather than on whether they
+# CHANGED. See backlog 1.6 and cohort-pilot-v1-results.md.
 #
 # REQUIRES A SUBSCRIPTION THAT INCLUDES IT. On a plan without Fable credits
 # every call returns "Fable 5.1 requires usage credits" as a clean error with
