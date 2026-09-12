@@ -329,3 +329,103 @@ That is not an argument against building the ingest, which is needed
 regardless. It is an argument for being explicit that a correspondence score
 is not a correctness score, wherever the resulting number ends up being
 quoted.
+
+## Mechanism agreement: what the judge measures, and what it does not
+
+This section is written before the judge was implemented, deliberately. Three
+metrics have failed on this project and each was quoted as something stronger
+than it was. Naming this one's limits first is cheaper than retracting them
+later — two of the three retractions were public.
+
+### It is not correctness
+
+**Mechanism agreement measures whether a reviewer predicted what maintainers
+later corrected.** That is a better proxy than correspondence, which only
+asked whether a finding landed on a file some later commit touched. It is
+still a proxy.
+
+Specifically, it is wrong in both directions and neither is a bug to be fixed:
+
+- **A real defect nobody ever fixed scores as a false positive.** FRR is a
+  live project; plenty of real bugs are never corrected, or are corrected
+  outside the observation window, or are fixed silently inside an unrelated
+  refactor. A reviewer that finds one of those is right and is scored wrong.
+- **A finding about a real-but-unfixed problem is penalised for being right.**
+  This is the same error stated from the reviewer's side, and it is the one
+  that matters when comparing arms: an arm that finds more obscure real
+  defects is penalised relative to one that finds only the obvious ones.
+
+So the metric answers "did this reviewer anticipate the maintainers", and
+that question is worth asking. It does not answer "was this reviewer right",
+and no number derived from this data answers that. **Anywhere the resulting
+figure is quoted, it is quoted with the word "agreement", never "accuracy"
+and never "precision against ground truth".**
+
+### Denominator rules
+
+Both learned from metrics that have already been retired here.
+
+**1. Cases with no corrective evidence are EXCLUDED, never scored as
+all-false.** `3a74a3a25bda9041`, `9ba8fca704a95e70` and `c96a113c3301c4fa`
+carry zero signals at any tier. Scoring their findings as unmatched would
+count *no evidence* as *wrong* — the precise denominator error that
+disqualified correspondence, where including unscoreable cases dropped the
+overall rate from 78.6% to 50.5% and told you nothing about review quality.
+
+Excluded cases are reported as excluded, with their finding counts, so the
+scoreable base can never be mistaken for the cohort.
+
+**2. Precision and recall are reported separately, never combined into one
+rate.**
+
+- *Precision* — of findings in scoreable cases, how many describe a defect
+  that a later fix addressed.
+- *Recall* — of strong-tier fixing commits, how many were described by at
+  least one finding.
+
+A single ratio over a finding set whose size the reviewer controls is
+gameable by changing that size, and that is not hypothetical: correspondence
+scored sonnet highest (84.2%) precisely because it produced 19 findings where
+opus-wide produced 49. Reporting the two separately is what makes "found more,
+matched a smaller fraction" legible instead of looking like a quality
+difference.
+
+### Judge design
+
+Three requirements, each aimed at a specific way this would otherwise fail.
+
+**It must argue both ways.** The judge sees the finding and the fix together,
+which is ideal conditions for constructing a match after the fact. It
+therefore borrows reasoner-3's structure: before ruling, it must state the
+strongest case *against* the match. A judge asked only to look for agreement
+will find it, and the resulting number will be a measure of its own
+agreeableness.
+
+**Same mechanism, not same area.** A match requires the finding to name the
+failure mode the fix addressed. Same file is not a match; same function is not
+a match. Locality matching is correspondence, which this project has already
+retired — reproducing it inside an LLM call would make it more expensive and
+less legible, not more valid.
+
+**Vagueness earns nothing.** "There may be a memory issue here" must not match
+a memory-leak fix. A finding earns a match by being specific enough that it
+could have been wrong. This is the rule that stops the metric rewarding
+hedging, in the same way the recall/precision split stops it rewarding
+brevity.
+
+### Pre-registered prediction
+
+Recorded before any real run, because the one previous pre-registration on
+this project (`fe99bcf9` f4) is the only reason that result carried weight.
+
+**Prediction: precision will come in well below the 78.6% strong-tier
+correspondence rate.** Correspondence needed only the right file; this needs
+the right mechanism, and the gap between those is the entire reason for
+building it.
+
+**Falsifier, stated in advance:** if precision comes back *close* to 78.6%,
+the likeliest explanation is that the judge is rationalising matches rather
+than that the reviewers were that accurate. In that case the judge's
+against-the-match reasoning gets read before the number is believed, and a
+deliberately mismatched control pair — a finding and an unrelated fix — is run
+to check it can say no at all.

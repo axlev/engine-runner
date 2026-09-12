@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engine-runner.internal/schemas/judge-mechanisms.schema.json",
+  "title": "Fix mechanism descriptions (judge call 1 of 2)",
+  "description": "What each later fix repaired, described from the patches ALONE. Produced by a call that is never shown the reviewer findings, so that the description cannot be conditioned on what a reviewer happened to say. Its output is passed verbatim into call 2; see docs/oracle-bundle-contract.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "case_id", "fix_mechanisms"],
+  "properties": {
+    "schema_version": { "type": "string", "minLength": 1 },
+    "case_id": { "type": "string", "minLength": 1 },
+    "fix_mechanisms": {
+      "type": "array",
+      "description": "Exactly one entry per fix supplied.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fix_id", "mechanism"],
+        "properties": {
+          "fix_id": { "type": "string", "minLength": 1 },
+          "mechanism": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "What was wrong with the code, under what condition, with what consequence - not what the patch touched. An honest 'no identifiable defect repair' is preferred to an invented mechanism, since everything downstream compares against this as though it were real."
+          }
+        }
+      }
+    }
+  }
+}

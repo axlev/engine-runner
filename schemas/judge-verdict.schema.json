@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engine-runner.internal/schemas/judge-verdict.schema.json",
+  "title": "Mechanism-agreement verdicts (judge call 2 of 2)",
+  "description": "One evaluator-only judgement per case. Receives the frozen fix_mechanisms from call 1 as INPUT and must not re-derive or re-emit them. Agreement with a later fix is NOT correctness - a real defect nobody fixed scores as a non-match. See docs/oracle-bundle-contract.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "verdicts",
+    "unmatched_fixes"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verdicts": {
+      "type": "array",
+      "description": "Exactly one entry per reviewer finding supplied, in any order.",
+      "items": {
+        "$ref": "#/$defs/verdict"
+      }
+    },
+    "unmatched_fixes": {
+      "type": "array",
+      "description": "Fixing commits no finding described. These are the recall misses and must be listed even when empty, so that a judge silently ignoring the fix side is detectable.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fix_id",
+          "why_no_finding_matched"
+        ],
+        "properties": {
+          "fix_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "why_no_finding_matched": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "agreement",
+        "case_against",
+        "rationale"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agreement": {
+          "type": "string",
+          "description": "MECHANISM: the finding names the failure mode the fix addressed. LOCALITY_ONLY: same file or function, different mechanism - explicitly NOT a match, recorded separately so the correspondence-vs-mechanism gap is measurable. NONE: no relationship. TOO_VAGUE: the finding is not specific enough to be wrong, so it cannot earn a match.",
+          "enum": [
+            "MECHANISM",
+            "LOCALITY_ONLY",
+            "NONE",
+            "TOO_VAGUE"
+          ]
+        },
+        "fix_id": {
+          "type": "string",
+          "description": "The fix this finding matches. Required when agreement is MECHANISM or LOCALITY_ONLY; omitted otherwise."
+        },
+        "case_against": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The strongest argument that this is NOT a match, stated before ruling. Required for every verdict including non-matches, where it is the strongest argument that it IS one. A judge that sees finding and fix together can rationalise agreement, so it must argue the other side first.",
+          "maxLength": 4000
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Why the ruling survives the case against it. Must name the specific failure mode, not the location.",
+          "maxLength": 4000
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "agreement": {
+                "enum": [
+                  "MECHANISM",
+                  "LOCALITY_ONLY"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "fix_id"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "agreement": {
+                "enum": [
+                  "NONE",
+                  "TOO_VAGUE"
+                ]
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "fix_id"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
