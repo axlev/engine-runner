@@ -379,6 +379,79 @@ definitional choice is measuring rationale verbosity, not falsification.
 Define SUB_MOVE by **claim change**, as the adopted rule does. This is the
 evidence for that choice.
 
+## The sub-move metric is contingent on stage 2 erring
+
+The adopted rule counts a sub-disposition move — stage 3 changing a finding's
+claim without changing its label — and those four moves are the entire
+difference between 3 of 9 runs and 5 of 9. Classifying them by what the
+correction was *grounded in*:
+
+| sub-move | what stage 3 did | grounded in |
+|---|---|---|
+| `fd8ee329` f3 | deleted stage 2's false claim that `assert()` text is lost, showing `lib/assert/assert.h` shadows the system header | **stage 2's error** |
+| `9ba8fca7` f4 | "one correction to B's reasoning… its secondary 'no-op' argument is wrong" | **stage 2's error** |
+| `fe99bcf9` f2 | tightened stage 2's impact framing as overstated | **stage 2's error** |
+| `fe99bcf9` f4 | found `isis_link_params_update()` already calls the leaking helper at `isis_te.c:499`, so the leak predates the diff | **a fact about the code** |
+
+**Three of the four are contingent on stage 2 having made a mistake.** That has
+two consequences, and the second is worse than the first.
+
+They cannot replicate unless stage 2 repeats the same error. Confirmed in the
+wide arm: narrow `fd8ee329` f3 corrected a claim about `assert()` that wide's
+stage 2 never made — the word does not appear in its assessment — so there was
+nothing for wide's stage 3 to correct. That is not a failure to replicate; it
+is a comparison that cannot be run.
+
+And **a higher sub-move count can indicate a worse stage 2 rather than a better
+stage 3.** The metric partly measures stage-2 error rate. Any cross-arm
+comparison on sub-moves is therefore confounded by upstream quality, in the
+same way per-run movement is confounded by finding density.
+
+### Pre-registered prediction
+
+**Recorded before `opuswide-fe99bcf9` was run** — it falls in pair 4, and pairs
+1-3 were complete at the time of writing.
+
+`fe99bcf9` f4 is the only sub-move in the arm grounded in a property of the
+source rather than in stage 2's reasoning. The leak predates the diff whether
+or not stage 2 says anything about it. So:
+
+- **If wide rediscovers the ASLA-leak finding and independently notices the
+  leak predates the diff** — that is the first replicated sub-move, and
+  evidence that the category measures something real.
+- **If wide rediscovers the finding and misses it** — the sub-move category is
+  mostly noise, and the judge should weight label moves and new findings above
+  it.
+
+No outcome of this run changes the adopted rule retroactively; it decides how
+sub-moves are *weighted* in the judge spec.
+
+## Wide arm: replication against narrow
+
+Scored per finding-pair, not per case — a case can replicate on one finding and
+contradict on another, and a single per-case label hides that.
+
+Through 4 of 10 cases: **REPLICATED 1 · NARROW-ONLY 2 · WIDE-ONLY 1 ·
+NEITHER 1.**
+
+**`c96a113c` replicated in the strong form.** Same finding, same stage-2
+disposition (CONFIRMED), same stage-3 disposition (NARROWED), same mechanism —
+stage 3 could not break the corruption claim itself, so it attacked
+reachability via a sibling finding proving the socket never binds to port 4321.
+Both arms independently discovered that sibling finding, so the cross-check was
+genuinely available to both rather than lucky. This is the project's first
+replication of anything.
+
+**`83d945a6` is a direct contradiction, not a missing comparison.** Both arms
+discovered the same defect and both stage 2s narrowed it; stage 3 then reached
+`REJECTED` in narrow and `NARROWED` in wide — **from a matched starting point,
+with better tooling in the arm that failed to move it.** This is a stronger
+variance result than the non-overlapping finding sets elsewhere in the arm,
+because the input was matched on the dimension that matters.
+
+Two findings in that case moved in opposite directions: narrow-only on the
+label move, wide-only on a new finding. Hence per-finding-pair scoring.
+
 ## Hypotheses this raises
 
 Ranked by how cheaply each can be falsified.
