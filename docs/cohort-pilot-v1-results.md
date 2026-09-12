@@ -407,24 +407,73 @@ stage 3.** The metric partly measures stage-2 error rate. Any cross-arm
 comparison on sub-moves is therefore confounded by upstream quality, in the
 same way per-run movement is confounded by finding density.
 
-### Pre-registered prediction
+### Pre-registered prediction, and its result
 
-**Recorded before `opuswide-fe99bcf9` was run** — it falls in pair 4, and pairs
+**Recorded before `opuswide-fe99bcf9` was run** — it fell in pair 4, and pairs
 1-3 were complete at the time of writing.
 
-`fe99bcf9` f4 is the only sub-move in the arm grounded in a property of the
-source rather than in stage 2's reasoning. The leak predates the diff whether
-or not stage 2 says anything about it. So:
+`fe99bcf9` f4 was the only sub-move in the arm grounded in a property of the
+source rather than in stage 2's reasoning. The prediction: if wide rediscovered
+the ASLA-leak finding and independently noticed the leak predates the diff,
+that is the first replicated sub-move and evidence the category measures
+something real; if it rediscovered and missed it, sub-moves are mostly noise.
 
-- **If wide rediscovers the ASLA-leak finding and independently notices the
-  leak predates the diff** — that is the first replicated sub-move, and
-  evidence that the category measures something real.
-- **If wide rediscovers the finding and misses it** — the sub-move category is
-  mostly noise, and the judge should weight label moves and new findings above
-  it.
+**Result: confirmed in substance, and it disqualifies the sub-move it was
+testing.** Wide did notice the leak predates the diff — at **stage 1**, not
+stage 3. Its `review-a.json` f3 reads "This is pre-existing code, but the
+change makes the branch reachable from two new places."
 
-No outcome of this run changes the adopted rule retroactively; it decides how
-sub-moves are *weighted* in the judge spec.
+And narrow's stage 1 said it too: "This is pre-existing code, but the change
+makes it newly reachable from configuration." So the narrow sequence was:
+
+> **A** stated the leak was pre-existing → **B** narrowed toward "newly
+> reachable" → **C** pushed back and re-established that the pre-existing path
+> dominates.
+
+Narrow's stage 3 discovered nothing. It **recovered a qualification stage 1 had
+already made and stage 2 had dropped.**
+
+So all four sub-moves are artifacts of stage-2 variance: three contingent on
+stage 2 erring, and this fourth — the one singled out as grounded in a code
+fact and therefore replicable — is stage 3 repairing stage 2. **The sub-move
+category does not survive, and it carries the entire 3/9 → 5/9 difference.**
+
+## Every number in this document measures B→C. The stated increment is A→C.
+
+`docs/reading-results.md:103` says it plainly: "The increment is A → C" —
+`review-a.json` is one reviewer in one pass, `review-c.json` is the same review
+after evidence and adversarial verification, and the single-pass baseline is
+already in every run.
+
+But `evaluation/findings.json` carries only `b_disposition` and
+`c_disposition`. There is no `a_*` field anywhere in it. So **3 of 9, 5 of 9,
+every label move, every sub-move, and the whole 3/9-vs-5/9-vs-7/9 table are
+B→C measurements standing in for a quantity the project defines as A→C.**
+
+**These can differ in sign.** On `fe99bcf9` f4 the B→C metric records a
+stage-3 contribution while the A→C increment is approximately zero — stage 3's
+conclusion is closer to stage 1's original framing than stage 2's was. A metric
+that rewards stage 3 for undoing stage 2 credits staging for work that nets to
+nothing against the single-pass baseline, which is the comparison the project
+exists to make.
+
+**And the corollary cuts the other way: "stage 3 contributed nothing" can mean
+stage 1 was good.** Wide's stage 1 already carried the qualification, so
+nothing remained for later stages to add on that finding. A stronger discovery
+stage mechanically shrinks the measured increment while making the review
+better. Every "stage 3 does not earn its cost" conclusion in this document
+fails to control for that.
+
+**What the judge spec requires, therefore:**
+
+1. **Score A→C, or at minimum report A→C alongside B→C.** They are different
+   quantities and the project's stated question is the former.
+2. **A→C needs a defined mapping**, because `review-a.json` findings have no
+   disposition field — only `confidence`, `severity` and `uncertainty`. That
+   mapping is a design decision and must be made explicitly rather than
+   inherited from whatever field is easiest to diff. The last two times a
+   metric was chosen that way, it manufactured a spurious cost correlation and
+   then a sub-move category that does not survive scrutiny.
 
 ## Wide arm: replication against narrow
 
