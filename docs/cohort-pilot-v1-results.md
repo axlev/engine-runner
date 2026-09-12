@@ -107,6 +107,68 @@ Caveats: n=2 for opus, both on synthetic fixtures rather than real FRR cases.
 Suggestive, not established. And it does not rescue stage 3 — it says only
 that the wrong arm may have been measured.
 
+## Opus arm: budget caps were deliberately not raised
+
+Opus runs much closer to its per-stage `max_cost_usd` than sonnet did. Through
+eight cases the high-water marks are `opus-fe99bcf9` reasoner-2 at $4.61 of
+$5.00 (92.1%), `opus-3a74a3a2` reasoner-1 at $3.51 of $4.00 (87.8%), and
+`opus-3a74a3a2` reasoner-2 at $4.16 of $5.00 (83.2%). Because `max_cost_usd`
+is the one bound the vendor enforces *before* the fact, a stage that reaches
+it is cut off mid-work — and a truncated stage presents as weak reasoning,
+not as a budget artifact.
+
+The caps were nonetheless **held at their sonnet-arm values for the whole opus
+arm**. `configs/agents/opus.yaml` is hashed into every run's fingerprint, so
+raising caps partway would make the opus arm non-uniform against a sonnet arm
+that ran uniformly throughout. That trades a *hypothetical* truncation
+confound for a *certain* fingerprint confound, in a comparison whose entire
+value is that only the arm changed. That argument is about experimental
+validity alone, and it is the only argument holding the caps.
+
+It is explicitly **not** supported by a claim that cost is unrelated to
+falsification. An earlier draft of this section argued that it was, on the
+strength of the single most expensive case having produced no movement. Eight
+cases do not support that, and in fact point the other way. Ranked by total
+case cost:
+
+| case | total | moved |
+|---|---|---|
+| `opus-3a74a3a2` | $9.76 | — |
+| `opus-83d945a6` | $9.34 | yes |
+| `opus-fe99bcf9` | $9.19 | yes |
+| `opus-c96a113c` | $7.95 | yes |
+| `opus-deaebcc7` | $7.86 | — |
+| `opus-fd8ee329` | $5.51 | — |
+| `opus-9ba8fca7` | $4.40 | — |
+| `opus-322abe6a` | $3.42 | — |
+
+All three disposition moves sit in the four most expensive cases; none of the
+four cheapest moved. With n=8 and three events this is a pattern, not a
+result — but it is the opposite of the pattern the earlier draft asserted, and
+it means spend is a live candidate explanation for falsification rather than a
+ruled-out one. Anything read off this arm should be read with that open.
+
+The mitigation instead is to record stage cost against cap for every stage,
+and to treat any stage above ~95% of its cap as **SUSPECT** — excluded from
+"stage 3 found nothing" conclusions — rather than read it as a weak result.
+No stage has crossed that line through eight cases.
+
+One case does show why the *converse* is worth watching. In `opus-fe99bcf9`
+reasoner-2 ran at 92.1% of cap and left finding f3 `INCONCLUSIVE`, saying
+explicitly that it lacked the enable/disable bodies; reasoner-3, with more
+headroom (80.3%), read those bodies and resolved it to `REJECTED`. So a
+disposition move can come from one stage having budget that an earlier stage
+had exhausted, not only from stage 3 being more capable. Budget pressure
+should be read per stage before any A→C increment is credited to capability.
+
+**Proposed future work, and the cost ranking above raises its priority:** re-run
+the cohort at higher caps as its own arm with its own fingerprint (a new
+`configs/agents/opus-wide.yaml`), never as a patch to this one. That answers the
+truncation question without retroactively splitting the arm now in flight. If
+the moves really do track spend, a wide-cap arm is not a robustness check on
+this result — it is the experiment that tells us whether stage 3's increment is
+a capability at all or just a budget we had not yet granted.
+
 ## Hypotheses this raises
 
 Ranked by how cheaply each can be falsified.
