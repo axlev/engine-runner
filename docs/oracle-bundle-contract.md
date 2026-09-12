@@ -133,7 +133,79 @@ at the cost of an 18-item base.
 Note also that strong signals are rare in *every* case (1-5). There is no case
 where the strongest evidence is plentiful.
 
-### Measure tier sensitivity before choosing a tier
+### Measured: correspondence is a coverage diagnostic, not a score
+
+Tier sensitivity was measured across all three arms (109 findings). Two
+results, and the second is the one that matters.
+
+**The weak tier is exactly redundant.** `all-tiers` and `strong+medium` agree
+in every cell, overall and per arm. Every path a weak signal names is already
+named by a strong or medium signal, so for path matching the 72 weak signals
+contribute nothing. The tier choice is two-way, not three-way, and the weak
+tier can be dropped without loss.
+
+**The tiers barely disagree.** On the scoreable base, strong-only is 78.6% and
+strong+medium 92.3%, with a per-arm spread of 74-83% at strong-only — tight,
+not variable, despite strong-signal bases of 1-5 per case. So the strong
+signals land mostly on paths reviewers were already examining. That is evidence
+the cohort's cases are well chosen, not evidence the metric works. Reach at
+strong tier is **6 of 10** cases, not 7: one case's strong signals name no
+`changed_paths` at all, and medium adds that case back.
+
+**And correspondence penalises recall, which disqualifies it as a score.**
+
+| arm | findings | all findings | scoreable base |
+|---|---|---|---|
+| sonnet | 19 | **84.2%** | 94.1% |
+| opus-narrow | 41 | 61.0% | 92.6% |
+| opus-wide | 49 | 63.3% | 91.2% |
+
+**Sonnet ranks highest. Every other metric in this project ranked it worst.**
+This one inverts the order — a 23.2pp spread on all findings, collapsing to
+2.9pp on the scoreable base, which locates the effect in the denominator rather
+than in review quality.
+
+The mechanism is that extra findings land on more peripheral files, and
+peripheral files are less likely to be ones a later fix touched. So a reviewer
+reporting only its safest findings scores higher, and a reviewer that finds
+more scores lower.
+
+One honest qualification: pure finding count does not fully explain it.
+`opus-wide` has *more* findings than `opus-narrow` (49 vs 41) and a slightly
+*higher* rate, so count is not the only term. The large, robust effect is
+sonnet against both opus arms.
+
+**This is the third metric in this project to fail, and the three share a
+shape: each can be improved by making the system worse.**
+
+| metric | improved by |
+|---|---|
+| label-delta movement | a worse stage 2, leaving more for stage 3 to repair |
+| sub-disposition movement | the same — demonstrated, wide's better stage 2 scored 0 |
+| path correspondence | **reporting fewer findings** |
+
+A benchmark scored on correspondence would tell you to find less. That is worse
+than being silent about correctness; it is pointed the wrong way.
+
+So the contract's position: **correspondence is a coverage diagnostic** — it
+answers "did the reviewer look where the fix landed" — and must never be quoted
+as a correctness number. If a tier must be selected, use **strong-only**: it is
+the only tier where a signal means a maintainer stated this commit fixes that
+PR, and it costs 14 points of a number that should not be quoted anyway.
+
+### Two requirements this imposes on the judge
+
+1. **Score correctness, via mechanism comparison.** All 174 fixing commits are
+   materialized, so this is now buildable. It is the only remaining candidate
+   that cannot be improved by degrading the system, because it asks whether a
+   finding was *right*.
+2. **Report precision *and* recall, never a single rate.** This follows
+   directly from the inversion above: any single number over a variable-size
+   finding set is gameable by changing the set size. Sonnet's 19 findings and
+   opus-wide's 49 cannot be compared on one ratio, whatever that ratio
+   measures.
+
+### On measuring a threshold before choosing it
 
 The two prior metric failures in this project both came from choosing a
 threshold by convenience and discovering afterwards that the threshold carried
