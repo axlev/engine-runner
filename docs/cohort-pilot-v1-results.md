@@ -145,28 +145,66 @@ uniformly throughout. Experimental validity was the only argument for holding
 them, and it remains the only one — the cost argument an earlier draft of this
 section also offered is retracted below.
 
-**The truncation risk was not hypothetical: it fired, and it cost a case.**
-`opus-c21d519d` failed. Its reasoner-2 exceeded the $5.00 cap on both attempts
-($5.37 and $5.02), the vendor killed it, no review-b was produced, and $13.72
-bought nothing. The arm is therefore **9 sealed of 10**, and the case lost was
-an expensive one.
+**The truncation risk was not hypothetical: it fired twice.**
 
-What went right is the failure *mode*: it failed loudly — status `failed`, no
-evaluation tree — rather than yielding a truncated review that would have read
-as weak stage-2 reasoning. That was the actual danger, and the ≥95% SUSPECT
-rule was the right shape for it; this case simply went past 100% instead of
-hovering under it. No sealed result is contaminated. The price of holding the
-caps was one lost case, not a corrupted arm.
+`opus-c21d519d` failed outright. Its reasoner-2 was killed by the cost cap on
+both attempts ($5.37 and $5.02 against $5.00), no review-b was produced, and
+$13.72 bought nothing. The arm is therefore **9 sealed of 10**.
+
+`opus-de6d5d30` hit **the same cap on its first reasoner-2 attempt** ($5.31,
+106% of $5.00), was killed the same way, retried, and the retry came in at
+$4.59 and succeeded. It is sealed `completed` and was scored in this document
+as a clean case.
+
+> **Correction.** An earlier version of this section claimed the failure mode
+> was benign — "it failed loudly… no sealed result is contaminated." **That is
+> only half right, and the half that is wrong is the one that mattered.**
+> `c21d519d` failed loudly. `de6d5d30` failed *silently*: one killed attempt,
+> one cheaper retry, and a sealed record indistinguishable from a clean run
+> except for an `attempts: 2` counter and an empty failure `detail`. The only
+> thing separating the visible failure from the invisible one is whether the
+> retry happened to land under the cap.
+>
+> So the price of holding the caps was one lost case **and** one silently
+> budget-compromised case counted as clean — not one lost case and an
+> otherwise uncorrupted arm.
+
+Two related properties of the bound, both measured:
+
+- **`max_cost_usd` is not a hard ceiling.** A deliberate probe at a $0.002 cap
+  recorded $0.005638 — a 2.8× overshoot. The CLI stops shortly *after*
+  exceeding, not at, which is why killed attempts read 106% and 107% of cap
+  rather than exactly 100%. Caps bound runaway spend; they do not bound a
+  single stage precisely, and cap arithmetic should not be read as a spend
+  guarantee.
+- **The ≥95% SUSPECT rule was the right shape but was applied to the wrong
+  denominator.** These utilisations are **per attempt**, not per stage, which
+  is correct for a cap rule — the vendor kills one invocation — but the
+  distinction was not stated. Per-attempt wall clock, recoverable from
+  `telemetry.json`: `c21d519d` r2 attempt 1 at 865s (96% of 900s),
+  `de6d5d30` r2 attempt 1 at 834s (93%). Both were near the time bound as well
+  as over the cost bound, so raising only `max_cost_usd` would have relocated
+  these failures rather than removed them.
 
 ### Retracted: spend does not predict falsification
 
 An earlier draft of this section claimed cost was unrelated to falsification.
 A later one claimed the opposite, on n=8. **Both are withdrawn.** At n=9,
-sealed cases ranked by total cost, with movement scored two ways:
+sealed cases ranked by total cost, with movement scored two ways.
+
+Costs here are **true spend including killed attempts**, not the figures
+`run.json` reports. `internal/results/results.go:208` assigns
+`doc.Usage = winning.Result.Usage`, so a stage that burned an attempt records
+only the attempt that succeeded. Durations are summed across attempts
+eighteen lines earlier, at `results.go:189`, with the comment that "a stage
+that burned a repair attempt really did cost that time, and a per-case total
+that ignored it would understate the cohort" — an argument that applies
+verbatim to dollars and is not applied to them. Only the two retried cases
+differ; the other seven are identical either way.
 
 | case | total | findings | label move | any move |
 |---|---|---|---|---|
-| `opus-de6d5d30` | $10.44 | 8 | — | — |
+| `opus-de6d5d30` | **$15.75** | 8 | — | — |
 | `opus-3a74a3a2` | $9.76 | 4 | — | — |
 | `opus-83d945a6` | $9.34 | 5 | yes | yes |
 | `opus-fe99bcf9` | $9.19 | 4 | yes | yes |
@@ -176,8 +214,10 @@ sealed cases ranked by total cost, with movement scored two ways:
 | `opus-9ba8fca7` | $4.40 | 4 | — | yes |
 | `opus-322abe6a` | $3.42 | 4 | — | — |
 
-Moved cases average $7.28, unmoved $7.87 — unmoved are slightly *more*
-expensive. Top four by cost: 2 of 4 moved. Bottom five: 3 of 5 moved.
+Moved cases average $7.28, unmoved **$9.20** — unmoved are the *more*
+expensive group, and correcting `de6d5d30` to its true spend widened that gap
+rather than narrowing it. Top four by cost: 2 of 4 moved. Bottom five: 3 of 5
+moved. The most expensive case in the arm moved nothing, at $15.75.
 
 **The instructive part is why the n=8 signal existed at all.** Under
 label-only scoring the split is 3/4 top versus 0/4 bottom, which looks
@@ -199,7 +239,8 @@ three label-moves had stage 2 holding *more* headroom than stage 3.
 
 Reasoner-2 is the most budget-pressured stage in absolute terms — mean
 utilisation 56.9% against reasoner-3's 52.4%, and it holds the arm's three
-highest marks (`c21d519d` 100.4%, `fe99bcf9` 92.1%, `de6d5d30` 91.9%) — but
+highest **per-attempt** marks (`c21d519d` 107%, `fe99bcf9` 92.1%,
+`de6d5d30` 106% on its killed first attempt) — but
 ~4.5pp is far too small to carry an explanation. The mechanism is real in
 exactly one case: in `opus-fe99bcf9`, stage 2 at 92.1% left f3 `INCONCLUSIVE`
 citing missing material, and stage 3 at 80.3% read that material and rejected
@@ -221,6 +262,18 @@ line 745, and returned `INCONCLUSIVE` for not having located the definition
 within budget. The enum is at **line 764**, nineteen lines further on, and it
 contains `ZCLIENT_SEND_FAILURE = -1`. By the stage's own stated logic the
 finding was a `REJECT`. One grep would have closed it.
+
+> **This is evidence that the harness was binding, but not clean evidence that
+> *search* was the binding constraint.** `de6d5d30` is the most
+> budget-compromised case in the arm: its review-b is the output of a retry
+> after a cap kill, and the f8 rationale says it abandoned the `zclient.h`
+> search "inside budget" — naming budget, not tooling, as what stopped it. So
+> f8 has two candidate causes, no-search and budget exhaustion, and this arm
+> cannot separate them. Worse, `opus-wide` raised tools *and* budgets in one
+> fingerprint change, so if it resolves f8 to `REJECT` that result is
+> confounded the same way. The recoverable test is per-case: a wide-arm move
+> whose winning attempt cost less than the old $5.00 cap cannot be explained
+> by the extra budget, which leaves search.
 
 At least one `INCONCLUSIVE` in this arm is therefore a harness artifact rather
 than a model limitation, which makes the movement figures below undercounts of
