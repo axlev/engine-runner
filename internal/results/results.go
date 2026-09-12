@@ -114,8 +114,29 @@ type stageOutcomeDoc struct {
 	DurationMS          int            `json:"duration_ms"`
 	VendorDurationMS    int            `json:"vendor_duration_ms,omitempty"`
 	VendorAPIDurationMS int            `json:"vendor_api_duration_ms,omitempty"`
-	Usage               adapters.Usage `json:"usage"`
-	OutputPath          string         `json:"output_path,omitempty"`
+
+	// Usage is summed across every attempt, matching DurationMS above. It
+	// previously carried the winning attempt's usage alone while the
+	// durations beside it were already summed - so a retried stage
+	// reported all of its time and only some of its money. The comment on
+	// DurationMS was already the argument against that: a burned attempt
+	// really did cost what it cost. Two narrow-arm cases were understated,
+	// opus-c21d519d by $5.37 and opus-de6d5d30 by $5.31.
+	Usage adapters.Usage `json:"usage"`
+
+	// FinalAttemptUsage is the winning attempt's usage on its own, and it
+	// is NOT redundant with Usage: per-attempt is the correct denominator
+	// for a budget check, because max_cost_usd bounds one invocation
+	// rather than a stage. Utilisation computed from the summed figure
+	// would report a stage that retried as having blown a cap it never
+	// approached.
+	//
+	// It also disambiguates the change above. A sealed run carrying both
+	// fields has summed Usage; one carrying only `usage` predates this and
+	// holds winning-attempt semantics.
+	FinalAttemptUsage adapters.Usage `json:"final_attempt_usage"`
+
+	OutputPath string `json:"output_path,omitempty"`
 }
 
 // writeStages writes stages/<stage>/{telemetry,request,review-*}.json for
@@ -189,7 +210,8 @@ func (w *Writer) writeStages(stagesDir, runDir string, attempts []orchestrator.S
 			DurationMS:          totalDurationMS(recs),
 			VendorDurationMS:    sumVendorDurationMS(recs),
 			VendorAPIDurationMS: sumVendorAPIDurationMS(recs),
-			Usage:               last.Result.Usage,
+			Usage:               sumUsage(recs),
+			FinalAttemptUsage:   last.Result.Usage,
 		}
 
 		if winning := lastSuccessful(recs); winning != nil {
@@ -205,7 +227,7 @@ func (w *Writer) writeStages(stagesDir, runDir string, attempts []orchestrator.S
 				return nil, fmt.Errorf("results: %w", err)
 			}
 			doc.OutputPath = rel
-			doc.Usage = winning.Result.Usage
+			doc.FinalAttemptUsage = winning.Result.Usage
 			doc.FinalExitCode = winning.Result.ExitCode
 			doc.StartedAt = formatTime(winning.Result.StartedAt)
 			doc.FinishedAt = formatTime(winning.Result.FinishedAt)
@@ -418,6 +440,20 @@ func formatTime(t time.Time) string {
 		return ""
 	}
 	return t.UTC().Format(time.RFC3339)
+}
+
+// sumUsage totals what a stage was billed across every attempt, failed ones
+// included. A retry is not free, and an attempt killed at its budget cap is
+// the most expensive kind: it is billed in full and returns no review.
+func sumUsage(recs []orchestrator.StageAttemptRecord) adapters.Usage {
+	var total adapters.Usage
+	for _, rec := range recs {
+		total.InputTokens += rec.Result.Usage.InputTokens
+		total.OutputTokens += rec.Result.Usage.OutputTokens
+		total.CostUSD += rec.Result.Usage.CostUSD
+		total.ToolCalls += rec.Result.Usage.ToolCalls
+	}
+	return total
 }
 
 // totalDurationMS sums wall-clock time across every attempt of a stage.

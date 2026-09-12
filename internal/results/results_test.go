@@ -201,6 +201,48 @@ func TestWriteRunRetryRecoveryKeepsFailedAttemptInTelemetryOnly(t *testing.T) {
 	// request.json / review-a.json must reflect only the winning attempt.
 	validateAgainst(t, "schemas/agent-request.schema.json", filepath.Join(runDir, "stages", "reasoner-1", "request.json"))
 	validateAgainst(t, "schemas/review-a.schema.json", filepath.Join(runDir, "stages", "reasoner-1", "review-a.json"))
+
+	// A retried stage must report the cost of BOTH attempts in `usage`,
+	// and the winning attempt's alone in `final_attempt_usage`. These used
+	// to be the same value, which understated two real cohort cases by
+	// over $5 each while the durations beside them were already summed.
+	runRaw, err := os.ReadFile(filepath.Join(runDir, "run.json"))
+	if err != nil {
+		t.Fatalf("reading run.json: %v", err)
+	}
+	var run struct {
+		Stages []struct {
+			Stage    string `json:"stage"`
+			Attempts int    `json:"attempts"`
+			Usage    struct {
+				CostUSD float64 `json:"cost_usd"`
+			} `json:"usage"`
+			FinalAttemptUsage struct {
+				CostUSD float64 `json:"cost_usd"`
+			} `json:"final_attempt_usage"`
+		} `json:"stages"`
+	}
+	if err := json.Unmarshal(runRaw, &run); err != nil {
+		t.Fatalf("parsing run.json: %v", err)
+	}
+	var checked bool
+	for _, s := range run.Stages {
+		if s.Stage != "reasoner-1" {
+			continue
+		}
+		checked = true
+		if s.Attempts != 2 {
+			t.Fatalf("reasoner-1 attempts = %d, want 2", s.Attempts)
+		}
+		if s.Usage.CostUSD <= s.FinalAttemptUsage.CostUSD {
+			t.Errorf("usage.cost_usd = %v, final_attempt_usage.cost_usd = %v; the summed "+
+				"figure must exceed the winning attempt's when a stage retried",
+				s.Usage.CostUSD, s.FinalAttemptUsage.CostUSD)
+		}
+	}
+	if !checked {
+		t.Fatalf("run.json had no reasoner-1 stage row")
+	}
 }
 
 // assertChecksumsAreAccurate recomputes every checksum in checksums.sha256
