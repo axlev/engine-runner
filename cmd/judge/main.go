@@ -427,14 +427,15 @@ func emit(out string, rep judge.Report, unattributed int, cost float64, single b
 	if single {
 		mode = "single-call A/B control"
 	}
-	fmt.Printf("\n=== mechanism agreement (%s) ===\n", mode)
+	fmt.Printf("\n=== mechanism anticipation (%s) ===\n", mode)
 	fmt.Println("JUDGED BY AN IN-FAMILY MODEL; CROSS-VENDOR CHECK PENDING.")
-	fmt.Println("Agreement is not correctness: a real defect nobody fixed scores as a non-match.")
+	fmt.Println("ANTICIPATION RATE, NOT PRECISION. A NONE verdict conflates a false positive with a")
+	fmt.Println("real defect nobody fixed and one the oracle missed, so true precision >= this figure.")
 	fmt.Println()
 
-	loc, ok := rep.Overall.Precision.LocalityRatio()
+	loc, ok := rep.Overall.Anticipation.LocalityRatio()
 	fmt.Printf("HEALTH CHECK  MECHANISM=%d  LOCALITY_ONLY=%d  ",
-		rep.Overall.Precision.Mechanism, rep.Overall.Precision.Locality)
+		rep.Overall.Anticipation.Mechanism, rep.Overall.Anticipation.Locality)
 	if ok {
 		fmt.Printf("locality ratio %.1f%%\n", loc)
 	} else {

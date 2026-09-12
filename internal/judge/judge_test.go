@@ -68,19 +68,19 @@ func TestPoolOrderIsDeterministicButNotByArm(t *testing.T) {
 	}
 }
 
-// TOO_VAGUE is excluded from the precision denominator - an unfalsifiable
+// TOO_VAGUE is excluded from the anticipation denominator - an unfalsifiable
 // finding is not a false positive, it is not a claim. That exclusion makes
 // vagueness free, which is the failure shape this project has hit three
-// times, so the vagueness rate must be impossible to detach from precision.
-func TestPrecisionCannotBeReadWithoutVagueness(t *testing.T) {
-	p := PrecisionReport{Mechanism: 3, Locality: 1, None: 1, TooVague: 5}
+// times, so the vagueness rate must be impossible to detach from the rate.
+func TestAnticipationCannotBeReadWithoutVagueness(t *testing.T) {
+	p := AnticipationReport{Mechanism: 3, Locality: 1, None: 1, TooVague: 5}
 
 	if got := p.Denominator(); got != 5 {
 		t.Errorf("Denominator = %d, want 5 (TOO_VAGUE excluded)", got)
 	}
 	prec, vague := p.Rates()
 	if prec != 60 {
-		t.Errorf("precision = %v, want 60", prec)
+		t.Errorf("anticipation = %v, want 60", prec)
 	}
 	if vague != 50 {
 		t.Errorf("vagueness = %v, want 50", vague)
@@ -97,17 +97,17 @@ func TestPrecisionCannotBeReadWithoutVagueness(t *testing.T) {
 
 // Vaguer findings must not raise the score without that being visible. This
 // is the gaming hole the adjacency rule exists to close.
-func TestVaguenessRaisesPrecisionButIsVisible(t *testing.T) {
-	honest := PrecisionReport{Mechanism: 3, Locality: 3, None: 4, TooVague: 0}
-	hedged := PrecisionReport{Mechanism: 3, Locality: 1, None: 1, TooVague: 5}
+func TestVaguenessRaisesTheRateButIsVisible(t *testing.T) {
+	honest := AnticipationReport{Mechanism: 3, Locality: 3, None: 4, TooVague: 0}
+	hedged := AnticipationReport{Mechanism: 3, Locality: 1, None: 1, TooVague: 5}
 
 	hp, hv := honest.Rates()
 	gp, gv := hedged.Rates()
 	if !(gp > hp) {
-		t.Fatalf("expected hedging to raise precision (%v -> %v); if it does not, this test's premise is wrong", hp, gp)
+		t.Fatalf("expected hedging to raise the anticipation rate (%v -> %v); if it does not, this test's premise is wrong", hp, gp)
 	}
 	if !(gv > hv) {
-		t.Errorf("hedging raised precision without raising the vagueness rate (%v -> %v); the tell is missing", hv, gv)
+		t.Errorf("hedging raised the rate without raising the vagueness rate (%v -> %v); the tell is missing", hv, gv)
 	}
 }
 
@@ -155,8 +155,8 @@ func TestVerdictNamingAnUnknownFixDoesNotCountForRecall(t *testing.T) {
 		Verdicts: []Verdict{{FindingID: id, Agreement: AgreementMechanism, FixID: "fix-INVENTED"}},
 	}}, idx, nil)
 
-	if rep.Overall.Precision.Mechanism != 1 {
-		t.Errorf("the verdict should still count toward precision")
+	if rep.Overall.Anticipation.Mechanism != 1 {
+		t.Errorf("the verdict should still count toward the anticipation rate")
 	}
 	if rep.Overall.Recall.Covered != 0 {
 		t.Errorf("Covered = %d, want 0: the named fix does not exist", rep.Overall.Recall.Covered)
@@ -174,10 +174,10 @@ func TestUnattributedVerdictsAreCounted(t *testing.T) {
 	if un != 1 {
 		t.Errorf("unattributed = %d, want 1", un)
 	}
-	if rep.Overall.Precision.Mechanism != 1 {
+	if rep.Overall.Anticipation.Mechanism != 1 {
 		t.Errorf("an unattributed verdict still belongs in the overall totals")
 	}
-	if rep.ByArm["sonnet"].Precision.Mechanism != 0 {
+	if rep.ByArm["sonnet"].Anticipation.Mechanism != 0 {
 		t.Errorf("an unattributed verdict must not be credited to an arm")
 	}
 }
@@ -190,8 +190,8 @@ func TestExcludedCasesAreReportedNotScored(t *testing.T) {
 		{CaseID: "case-b", Findings: 6, Reason: "no corrective signals at any tier"},
 	}
 	rep, _ := Score(nil, nil, excluded)
-	if rep.Overall.Precision.Judged() != 0 {
-		t.Errorf("excluded findings must not enter the precision base")
+	if rep.Overall.Anticipation.Judged() != 0 {
+		t.Errorf("excluded findings must not enter the anticipation base")
 	}
 	if rep.ExcludedFindings() != 10 {
 		t.Errorf("ExcludedFindings = %d, want 10", rep.ExcludedFindings())
@@ -205,14 +205,14 @@ func TestExcludedCasesAreReportedNotScored(t *testing.T) {
 // awards MECHANISM where LOCALITY_ONLY belongs, so near-zero locality
 // alongside many matches is the signature.
 func TestLocalityRatioIsTheRationalisationTell(t *testing.T) {
-	if _, ok := (PrecisionReport{None: 5}).LocalityRatio(); ok {
+	if _, ok := (AnticipationReport{None: 5}).LocalityRatio(); ok {
 		t.Errorf("with no location-related verdicts the ratio is undefined, not zero")
 	}
-	suspicious, ok := PrecisionReport{Mechanism: 20, Locality: 0}.LocalityRatio()
+	suspicious, ok := AnticipationReport{Mechanism: 20, Locality: 0}.LocalityRatio()
 	if !ok || suspicious != 0 {
 		t.Errorf("LocalityRatio = %v, want 0", suspicious)
 	}
-	healthy, _ := PrecisionReport{Mechanism: 10, Locality: 10}.LocalityRatio()
+	healthy, _ := AnticipationReport{Mechanism: 10, Locality: 10}.LocalityRatio()
 	if healthy != 50 {
 		t.Errorf("LocalityRatio = %v, want 50", healthy)
 	}
@@ -244,10 +244,10 @@ func TestNearDuplicatesAcrossArmsScoreIndependently(t *testing.T) {
 		},
 	}}, idx, nil)
 
-	if rep.ByArm["sonnet"].Precision.TooVague != 1 {
+	if rep.ByArm["sonnet"].Anticipation.TooVague != 1 {
 		t.Errorf("the vague finding must stay vague regardless of its sibling")
 	}
-	if rep.ByArm["opus-wide"].Precision.Mechanism != 1 {
+	if rep.ByArm["opus-wide"].Anticipation.Mechanism != 1 {
 		t.Errorf("the sharp finding should match")
 	}
 	// Recall is over fixes: the fix is covered overall and by opus-wide, but

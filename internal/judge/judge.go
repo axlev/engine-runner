@@ -4,11 +4,22 @@
 // EVALUATOR-ONLY. This package reads the answer key. internal/oracle's
 // isolation tests keep the review path away from both.
 //
-// IT DOES NOT MEASURE CORRECTNESS. A real defect nobody ever fixed scores as
-// a non-match, and a finding about a real-but-unfixed problem is penalised
-// for being right. The metric answers "did this reviewer anticipate the
-// maintainers", which is worth asking and is not the same question. Anywhere
-// the figure is quoted it is "agreement", never "accuracy".
+// IT MEASURES ANTICIPATION, NOT PRECISION. The headline figure is the share
+// of findings that named a defect maintainers later fixed. It is NOT
+// precision, and calling it precision would overstate it in a specific,
+// knowable direction:
+//
+// A NONE verdict is three things this data cannot tell apart - a genuine
+// false positive, a real defect nobody ever fixed, and a real defect whose
+// fix the oracle never captured. Only the first is an error. So the true
+// precision is GREATER THAN OR EQUAL TO the anticipation rate, by an unknown
+// margin, and no number derived from this oracle can close that gap.
+//
+// The same asymmetry bounds what the benchmark can claim about staging: a
+// rejected finding that matched a real fix is a PROVABLY wrong rejection,
+// while a rejection that correctly killed a non-defect is unprovable for
+// exactly the reason above. This data can demonstrate harm and cannot
+// demonstrate benefit.
 package judge
 
 import "fmt"
@@ -60,20 +71,20 @@ type ExcludedCase struct {
 	Reason   string `json:"reason"`
 }
 
-// PrecisionReport deliberately exposes no way to obtain the precision figure
-// on its own.
+// AnticipationReport deliberately exposes no way to obtain the anticipation
+// rate on its own.
 //
 // Excluding TOO_VAGUE from the denominator is correct - an unfalsifiable
-// finding is not a false positive, it is not a claim - but it opens the
-// failure this project has now hit three times: a number that improves when
-// the system gets worse. A reviewer writing vaguer findings has them removed
-// from the denominator rather than counted as misses, so precision RISES.
+// finding is not a claim at all - but it opens the failure this project has
+// now hit three times: a number that improves when the system gets worse. A
+// reviewer writing vaguer findings has them removed from the denominator
+// rather than counted as misses, so the rate RISES.
 //
-// The defence is that the vagueness rate travels with the precision figure
-// and cannot be detached from it. Rates() returns both, so a caller cannot
-// read one without receiving the other, and String() renders both. There is
-// no Precision() accessor and there must not be one.
-type PrecisionReport struct {
+// The defence is that the vagueness rate travels with the headline figure and
+// cannot be detached from it. Rates() returns both, so a caller cannot read
+// one without receiving the other, and String() renders both. There is no
+// single-value accessor and there must not be one.
+type AnticipationReport struct {
 	Mechanism int `json:"mechanism"`
 	Locality  int `json:"locality_only"`
 	None      int `json:"none"`
@@ -81,29 +92,30 @@ type PrecisionReport struct {
 }
 
 // Judged is every finding that produced a verdict, vague ones included.
-func (p PrecisionReport) Judged() int {
+func (p AnticipationReport) Judged() int {
 	return p.Mechanism + p.Locality + p.None + p.TooVague
 }
 
-// Denominator is the precision base: TOO_VAGUE is excluded.
-func (p PrecisionReport) Denominator() int {
+// Denominator is the anticipation base: TOO_VAGUE is excluded.
+func (p AnticipationReport) Denominator() int {
 	return p.Mechanism + p.Locality + p.None
 }
 
-// Rates returns precision and the vagueness rate together, and only
-// together. Two return values is the mechanism: obtaining precision alone
-// requires explicitly discarding the vagueness rate with `_`, which is
-// visible to a reader in a way a silently-unused struct field is not.
-func (p PrecisionReport) Rates() (precision, vagueness float64) {
+// Rates returns the anticipation rate and the vagueness rate together, and
+// only together. Two return values is the mechanism: obtaining the headline
+// figure alone requires explicitly discarding the vagueness rate with `_`,
+// which is visible to a reader in a way a silently-unused struct field is
+// not.
+func (p AnticipationReport) Rates() (anticipation, vagueness float64) {
 	return ratio(p.Mechanism, p.Denominator()), ratio(p.TooVague, p.Judged())
 }
 
-// String renders the pair. "84.0% agreement" alone is not a reportable
-// figure; "84.0% agreement (21/25), 11 of 36 findings TOO_VAGUE" is.
-func (p PrecisionReport) String() string {
-	prec, vague := p.Rates()
-	return fmt.Sprintf("%.1f%% agreement (%d/%d), %d of %d findings TOO_VAGUE (%.1f%%)",
-		prec, p.Mechanism, p.Denominator(), p.TooVague, p.Judged(), vague)
+// String renders the pair, and names the figure for what it is. "84.0%" on
+// its own is not reportable, and neither is the word "precision".
+func (p AnticipationReport) String() string {
+	ant, vague := p.Rates()
+	return fmt.Sprintf("%.1f%% anticipated (%d/%d) [true precision >= this], %d of %d findings TOO_VAGUE (%.1f%%)",
+		ant, p.Mechanism, p.Denominator(), p.TooVague, p.Judged(), vague)
 }
 
 // RecallReport is over FIXES, not findings, so the finding count cannot move
@@ -120,17 +132,17 @@ func (r RecallReport) String() string {
 	return fmt.Sprintf("%.1f%% of fixes anticipated (%d/%d)", r.Rate(), r.Covered, r.Fixes)
 }
 
-// ArmReport is one arm's scores, or the pooled total. Precision and Recall
+// ArmReport is one arm's scores, or the pooled total. Anticipation and Recall
 // are separate fields and are never combined into one rate: a single ratio
 // over a finding set whose size the reviewer controls is gameable by changing
 // that size, which is exactly what made correspondence rank the arm with the
 // fewest findings highest.
 type ArmReport struct {
-	Precision PrecisionReport `json:"precision"`
-	Recall    RecallReport    `json:"recall"`
+	Anticipation AnticipationReport `json:"anticipation"`
+	Recall       RecallReport       `json:"recall"`
 }
 
-func (a ArmReport) String() string { return a.Precision.String() + " | " + a.Recall.String() }
+func (a ArmReport) String() string { return a.Anticipation.String() + " | " + a.Recall.String() }
 
 // Report is the whole scored result.
 //
@@ -170,7 +182,7 @@ func (r Report) String() string {
 // an id, which must not silently vanish.
 //
 // A verdict naming a fix_id that was not supplied for that case counts toward
-// precision but never toward recall: it is a judge error, and crediting a fix
+// the anticipation rate but never toward recall: it is a judge error, and crediting a fix
 // that does not exist would inflate recall.
 //
 // Per-arm recall asks whether THAT arm's findings covered the fix, so a fix
@@ -205,7 +217,7 @@ func Score(cases []CaseVerdicts, index map[string]PooledFinding, excluded []Excl
 			}
 			arm := prov.Arm
 
-			bump := func(p *PrecisionReport) {
+			bump := func(p *AnticipationReport) {
 				switch v.Agreement {
 				case AgreementMechanism:
 					p.Mechanism++
@@ -217,10 +229,10 @@ func Score(cases []CaseVerdicts, index map[string]PooledFinding, excluded []Excl
 					p.TooVague++
 				}
 			}
-			bump(&rep.Overall.Precision)
+			bump(&rep.Overall.Anticipation)
 			if ok {
 				a := rep.ByArm[arm]
-				bump(&a.Precision)
+				bump(&a.Anticipation)
 				rep.ByArm[arm] = a
 			}
 
@@ -248,13 +260,13 @@ func Score(cases []CaseVerdicts, index map[string]PooledFinding, excluded []Excl
 }
 
 // LocalityRatio is the primary health check on a real run, ahead of the
-// precision figure. A judge that rationalises matches awards MECHANISM where
+// anticipation figure. A judge that rationalises matches awards MECHANISM where
 // LOCALITY_ONLY belongs, so a value near zero alongside a high match count is
 // the signature of that failure - detectable without reading any rationale.
 //
 // Returns the share of location-related verdicts that were held to be
 // locality only, and whether there were any such verdicts at all.
-func (p PrecisionReport) LocalityRatio() (float64, bool) {
+func (p AnticipationReport) LocalityRatio() (float64, bool) {
 	total := p.Mechanism + p.Locality
 	if total == 0 {
 		return 0, false
