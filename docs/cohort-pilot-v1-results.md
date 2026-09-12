@@ -43,13 +43,29 @@ reviewer, one pass — and it costs $8.25. The other $12.38 buys stages 2 and 3.
 
 ## The result that matters
 
-**Reasoner-3 changed nothing. Nineteen findings judged, zero dispositions
+**Reasoner-3 moved no disposition label. Nineteen findings judged, zero labels
 moved, zero new findings, ten cases out of ten.**
 
-Its output set is identical to reasoner-2's. That has a consequence which
-needs no oracle: scoring B and C against ground truth would return **identical
-numbers by construction**, because there is nothing to distinguish. On this
-cohort, $5.51 — 27% of spend — altered no outcome.
+> **Amended.** The paragraph that followed claimed stage 3's output set was
+> identical to stage 2's, and therefore that scoring B and C against ground
+> truth "would return identical numbers by construction." **That is false.**
+> It was true only of disposition *labels*, which is the metric this document
+> originally used and which was later retired for undercounting by 40%. Under
+> the adopted rule — label *or* claim change — sonnet is **1 of 19**, not 0.
+>
+> In `frr-fd8ee329` f1, stage 2 rejected the finding on the grounds that
+> `zlog_file_set_fd()` during `zlog_init()` reaches `zlog_file_cycle()`'s
+> `fd = dup(zcf->fd)`. Stage 3 showed that is not what happens:
+> `zlog_targets.c:193` breaks on `if (zcf->prio_min == ZLOG_DISABLED)` and the
+> `dup()` sits at :196, *after* the break, while `log_vty.c:53` initialises
+> that target with `.prio_min = ZLOG_DISABLED`. The first call breaks out
+> before the dup; the real dup happens later, when `--log stdout` is
+> processed. Same `REJECTED` verdict, **different mechanism** — so B and C
+> would not score identically against an oracle, and the "by construction"
+> claim does not hold.
+
+On this cohort stage 3 altered one finding's reasoning and no finding's label,
+for $5.51 — 27% of spend.
 
 Reasoner-2 is the opposite: it altered **7 of 19** findings (4 rejected, 2
 narrowed, 1 inconclusive). Whether those changes were improvements is exactly
@@ -86,10 +102,19 @@ made, was on **opus**:
 | `tlv-opus-1` | opus | **overturned a rejection** (B `r1` → C `c2`) |
 | 14 others | haiku, sonnet | nothing, in any run |
 
-0 of 14 on the weaker arms; 2 of 2 on opus. The plausible mechanism is that
+0 of 14 on the weaker arms; 2 of 2 on opus. The proposed mechanism was that
 adversarial verification needs enough capability to construct a genuine
 falsification, and that a weaker model can only re-read stage 2's chain and
 agree with it.
+
+> **The second half of that mechanism is refuted by the completed arms.**
+> Sonnet's stage 3 is not re-reading and agreeing. Its rationales are
+> multi-branch, specific, and independently verifiable: `c21d519d` f1 traces
+> five construction paths to close a rejection, and `3a74a3a2` f1 states that
+> it went further than stage 2 by checking hook consumers for deferred use of
+> the adjacency pointer. Both arms genuinely attempt falsification. What
+> differs is how often they *overturn* — and whether that difference is real
+> is settled below, not here.
 
 **This cohort was run on sonnet on my recommendation**, argued from a
 ceiling-effect worry — that too strong a model would find everything in stage
@@ -254,6 +279,52 @@ arm's three highest utilisations. Since minting that arm is a fingerprint
 change anyway, granting the reviewers search tools in the same change costs
 nothing extra and removes the confound measured above. Never patch either into
 this arm.
+
+## Opus vs sonnet: the comparison is underpowered
+
+Both arms scored under the adopted rule, sonnet re-scored retroactively from
+sealed results under identical criteria and the same conservative borderline
+convention. `frr-c96a113c` produced zero findings and so has no pairs, making
+sonnet's scoreable denominator 9 runs.
+
+| rule | sonnet /run | sonnet /finding | opus /finding | Fisher 2-tailed |
+|---|---|---|---|---|
+| label only | 0 of 9 | 0/19 = 0% | 3/41 = 7.3% | p = 0.545 |
+| label-or-sub — *adopted* | 1 of 9 | 1/19 = 5.3% | 7/41 = 17.1% | p = 0.416 |
+| label-or-sub, per run | 1 of 9 | — | 5 of 9 | p = 0.131 |
+
+**Opus is 3.2× sonnet per finding on the adopted rule, and that difference is
+not distinguishable from chance at these sample sizes.** No test reaches
+significance; the closest is the per-run comparison at p = 0.131, and per-run
+is the basis the finding-density gap makes unsafe to compare on.
+
+For scale on the power problem: against sonnet's 1/19, opus would have to
+reach **12 of 41 (29%)** for p < 0.05. It reached 7 of 41. The observed effect
+is well inside the range this design cannot resolve — which sits on top of the
+run-to-run variance already documented above, where one case gave 1 finding
+then 3 under identical conditions.
+
+**So the project's central question is unresolved, not answered.** The
+direction is consistent with the opus hypothesis across every measurement ever
+taken, and the magnitude is unmeasured. Reporting "opus is 3.2× sonnet"
+without this paragraph would repeat exactly the error retracted above: a
+pattern that survives because nobody tested it.
+
+### Rule 3 is rejected, and its failure is instructive
+
+The third rule — crediting stage 3 for contributing new verifiable evidence
+behind an unchanged claim — must not be codified. It is not merely loose; it
+**inverts the result**. On opus only 4 of 26 no-moves are borderline under it,
+but on sonnet 15–18 of 18 qualify, because nearly every sonnet stage-3
+rationale cites a `file:line` stage 2 never touched and then confirms stage 2.
+
+Scored that way the arms come out sonnet 16/19 (84%) against opus 11/41 (27%),
+which is *significant in the opposite direction* (p < 0.001). A rule that
+turns a 3.2× opus advantage into a significant sonnet advantage on a
+definitional choice is measuring rationale verbosity, not falsification.
+
+Define SUB_MOVE by **claim change**, as the adopted rule does. This is the
+evidence for that choice.
 
 ## Hypotheses this raises
 
