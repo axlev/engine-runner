@@ -475,13 +475,101 @@ fails to control for that.
    metric was chosen that way, it manufactured a spurious cost correlation and
    then a sub-move category that does not survive scrutiny.
 
+## Wide arm outcome: better review, same numbers
+
+`opus-wide` granted the reviewers `Grep` and `Glob` and raised the per-stage
+caps, in one fingerprint change. It ran all ten cases.
+
+```
+                   narrow            wide
+completion         9/10 (1 failed)   10/10
+true cost          $86.91            $80.20
+findings           41                50
+label moves        3                 5
+sub-moves          4                 0
+new findings       1                 1
+cases w/ movement  5 of 9  (56%)     5 of 10 (50%)
+```
+
+**More complete, cheaper, and more findings — at an indistinguishable movement
+rate.** Cost again tracked finding count rather than tooling.
+
+### The harness gap was definitively binding, and the metric cannot see it
+
+Narrow `de6d5d30` f8 stated its own decision procedure — does
+`enum zclient_send_status` have a negative enumerator? — paged `lib/zclient.h`
+to line 745, and returned `INCONCLUSIVE` "without locating the definition
+inside budget."
+
+Wide's **stage 2** cites `lib/zclient.h:764-768` directly and rejects the
+finding: "Because `ZCLIENT_SEND_FAILURE == -1` the enum's underlying type is
+signed and, with FRR's default (no `-fshort-enums`), is `int` — so the pointee
+types are compatible and no `-Wincompatible-pointer-types` warning is
+emitted." Ground truth: `ZCLIENT_SEND_FAILURE = -1` is at line 765.
+
+```
+narrow f8   B=INCONCLUSIVE  C=INCONCLUSIVE   (abandoned the lookup)
+wide   f5   B=REJECTED      C=REJECTED       (found the enum, correct verdict)
+```
+
+This is the cleanest result in the project: search resolved a finding the
+narrow arm demonstrably could not. **And it registers as zero disposition
+movement**, because the resolution happened at stage 2 and every metric here is
+B→C. It is the second instance of that shape, after the ASLA leak.
+
+So the premise that motivated this arm — that no-grep was suppressing
+*dispositions* — is wrong. It was suppressing *resolution*, which is a
+different and arguably more valuable thing, and which nothing we measure
+detects.
+
+**Search attribution, final: 0 of 5 label moves have positive search
+evidence.** Search appears in 5 of 10 cases' stage-3 rationales, always
+correctly, never in a verdict that moved. The specific conclusion is that
+search improves review quality, at stage 2, on findings that then do not move.
+
+### A better stage 2 scores worse. This is now demonstrated, not argued.
+
+Wide produced **zero** sub-moves against narrow's four. Sub-moves are stage 3
+repairing stage 2, and wide's stage 2 was demonstrably stronger — it resolved
+the enum question unaided and never made the false `assert()` claim narrow's
+stage 2 made. There was less to repair.
+
+The arm with the better stage 2 scored **0** on the category that carries the
+entire 3/9 → 5/9 difference. Any metric with this property cannot be used to
+compare arms.
+
+Note also that the two arms' movement rates are indistinguishable (50% vs 56%)
+while their **composition is completely different** — wide is all label moves,
+narrow is mostly sub-moves. A summary reporting "both arms moved about half
+their cases" would conceal the only interesting structure in the data.
+
+### The narrow cap failure was variance, not a requirement
+
+`c21d519d`, which failed the narrow arm when reasoner-2 was killed at $5.37 and
+$5.02 against a $5.00 cap, **completed in wide with reasoner-2 at $4.30 —
+under the old cap.** Lower than either attempt that died. So the raised caps
+are not what rescued it; the narrow failure was run-to-run variance in a stage
+that happened to sit near its bound twice.
+
+The caps were genuinely load-bearing in exactly one case: `de6d5d30`, whose r2
+and r3 reached 125.4% and 141.0% of the old caps and would both have been
+killed under narrow configuration. Its r3 also hit 94.0% of the *new* cap, the
+closest any wide stage came to the SUSPECT line.
+
 ## Wide arm: replication against narrow
 
 Scored per finding-pair, not per case — a case can replicate on one finding and
 contradict on another, and a single per-case label hides that.
 
-Through 4 of 10 cases: **REPLICATED 1 · NARROW-ONLY 2 · WIDE-ONLY 1 ·
-NEITHER 1.**
+Final, all 10 cases: **REPLICATED 1 · NARROW-ONLY 3 · WIDE-ONLY 4 ·
+NOT-COMPARABLE 3 · INSIGHT-AT-DIFFERENT-STAGE 2 · NEITHER 12.**
+
+**One replication out of eleven comparable pairs**, and two direct
+contradictions where the same defect with the same stage-2 disposition received
+a different stage-3 verdict — `83d945a6` (REJECTED narrow, NARROWED wide) and
+`de6d5d30` f6/f8 (NARROWED narrow, REJECTED wide). `INSIGHT-AT-DIFFERENT-STAGE`
+is a category the four-way scheme had no slot for and which turned out to
+matter most: it is the shape that exposed the B→C defect, twice.
 
 **`c96a113c` replicated in the strong form.** Same finding, same stage-2
 disposition (CONFIRMED), same stage-3 disposition (NARROWED), same mechanism —
