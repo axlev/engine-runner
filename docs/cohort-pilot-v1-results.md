@@ -109,65 +109,139 @@ that the wrong arm may have been measured.
 
 ## Opus arm: budget caps were deliberately not raised
 
-Opus runs much closer to its per-stage `max_cost_usd` than sonnet did. Through
-eight cases the high-water marks are `opus-fe99bcf9` reasoner-2 at $4.61 of
-$5.00 (92.1%), `opus-3a74a3a2` reasoner-1 at $3.51 of $4.00 (87.8%), and
-`opus-3a74a3a2` reasoner-2 at $4.16 of $5.00 (83.2%). Because `max_cost_usd`
-is the one bound the vendor enforces *before* the fact, a stage that reaches
-it is cut off mid-work — and a truncated stage presents as weak reasoning,
-not as a budget artifact.
+Opus runs much closer to its per-stage `max_cost_usd` than sonnet did. Because
+`max_cost_usd` is the one bound the vendor enforces *before* the fact, a stage
+that reaches it is cut off mid-work rather than reported after it.
 
-The caps were nonetheless **held at their sonnet-arm values for the whole opus
-arm**. `configs/agents/opus.yaml` is hashed into every run's fingerprint, so
-raising caps partway would make the opus arm non-uniform against a sonnet arm
-that ran uniformly throughout. That trades a *hypothetical* truncation
-confound for a *certain* fingerprint confound, in a comparison whose entire
-value is that only the arm changed. That argument is about experimental
-validity alone, and it is the only argument holding the caps.
+The caps were **held at their sonnet-arm values for the whole opus arm**.
+`configs/agents/opus.yaml` is hashed into every run's fingerprint, so raising
+caps partway would make the opus arm non-uniform against a sonnet arm that ran
+uniformly throughout. Experimental validity was the only argument for holding
+them, and it remains the only one — the cost argument an earlier draft of this
+section also offered is retracted below.
 
-It is explicitly **not** supported by a claim that cost is unrelated to
-falsification. An earlier draft of this section argued that it was, on the
-strength of the single most expensive case having produced no movement. Eight
-cases do not support that, and in fact point the other way. Ranked by total
-case cost:
+**The truncation risk was not hypothetical: it fired, and it cost a case.**
+`opus-c21d519d` failed. Its reasoner-2 exceeded the $5.00 cap on both attempts
+($5.37 and $5.02), the vendor killed it, no review-b was produced, and $13.72
+bought nothing. The arm is therefore **9 sealed of 10**, and the case lost was
+an expensive one.
 
-| case | total | moved |
-|---|---|---|
-| `opus-3a74a3a2` | $9.76 | — |
-| `opus-83d945a6` | $9.34 | yes |
-| `opus-fe99bcf9` | $9.19 | yes |
-| `opus-c96a113c` | $7.95 | yes |
-| `opus-deaebcc7` | $7.86 | — |
-| `opus-fd8ee329` | $5.51 | — |
-| `opus-9ba8fca7` | $4.40 | — |
-| `opus-322abe6a` | $3.42 | — |
+What went right is the failure *mode*: it failed loudly — status `failed`, no
+evaluation tree — rather than yielding a truncated review that would have read
+as weak stage-2 reasoning. That was the actual danger, and the ≥95% SUSPECT
+rule was the right shape for it; this case simply went past 100% instead of
+hovering under it. No sealed result is contaminated. The price of holding the
+caps was one lost case, not a corrupted arm.
 
-All three disposition moves sit in the four most expensive cases; none of the
-four cheapest moved. With n=8 and three events this is a pattern, not a
-result — but it is the opposite of the pattern the earlier draft asserted, and
-it means spend is a live candidate explanation for falsification rather than a
-ruled-out one. Anything read off this arm should be read with that open.
+### Retracted: spend does not predict falsification
 
-The mitigation instead is to record stage cost against cap for every stage,
-and to treat any stage above ~95% of its cap as **SUSPECT** — excluded from
-"stage 3 found nothing" conclusions — rather than read it as a weak result.
-No stage has crossed that line through eight cases.
+An earlier draft of this section claimed cost was unrelated to falsification.
+A later one claimed the opposite, on n=8. **Both are withdrawn.** At n=9,
+sealed cases ranked by total cost, with movement scored two ways:
 
-One case does show why the *converse* is worth watching. In `opus-fe99bcf9`
-reasoner-2 ran at 92.1% of cap and left finding f3 `INCONCLUSIVE`, saying
-explicitly that it lacked the enable/disable bodies; reasoner-3, with more
-headroom (80.3%), read those bodies and resolved it to `REJECTED`. So a
-disposition move can come from one stage having budget that an earlier stage
-had exhausted, not only from stage 3 being more capable. Budget pressure
-should be read per stage before any A→C increment is credited to capability.
+| case | total | findings | label move | any move |
+|---|---|---|---|---|
+| `opus-de6d5d30` | $10.44 | 8 | — | — |
+| `opus-3a74a3a2` | $9.76 | 4 | — | — |
+| `opus-83d945a6` | $9.34 | 5 | yes | yes |
+| `opus-fe99bcf9` | $9.19 | 4 | yes | yes |
+| `opus-c96a113c` | $7.95 | 6 | yes | yes |
+| `opus-deaebcc7` | $7.86 | 3 | — | — |
+| `opus-fd8ee329` | $5.51 | 3 | — | yes |
+| `opus-9ba8fca7` | $4.40 | 4 | — | yes |
+| `opus-322abe6a` | $3.42 | 4 | — | — |
 
-**Proposed future work, and the cost ranking above raises its priority:** re-run
-the cohort at higher caps as its own arm with its own fingerprint (a new
-`configs/agents/opus-wide.yaml`), never as a patch to this one. That answers the
-truncation question without retroactively splitting the arm now in flight. If
-the moves really do track spend, a wide-cap arm is not a robustness check on
-this result — it is the experiment that tells us whether stage 3's increment is
-a capability at all or just a budget we had not yet granted.
+Moved cases average $7.28, unmoved $7.87 — unmoved are slightly *more*
+expensive. Top four by cost: 2 of 4 moved. Bottom five: 3 of 5 moved.
+
+**The instructive part is why the n=8 signal existed at all.** Under
+label-only scoring the split is 3/4 top versus 0/4 bottom, which looks
+striking. Under any-movement scoring it is 2/4 versus 3/5, which is nothing.
+Both cheap "unmoved" cases — `fd8ee329` and `9ba8fca7` — contain
+sub-disposition moves that label-delta scoring discards. The coarse metric
+manufactured the correlation. A scoring choice that loses information did not
+merely undercount the result; it produced a spurious one, and it survived two
+increments before the ninth case exposed it.
+
+### Tested and not supported: reasoner-2 budget starvation
+
+The hypothesis was that stage-3 moves come from stage 2 having exhausted a
+budget stage 3 still had — making the A→C increment a budget artifact rather
+than a capability. Measured across the arm, it comes out **inverted**: moved
+cases average −1.7pp B-vs-C squeeze, unmoved +16.2pp. The two most-squeezed
+cases (`3a74a3a2` +30.9pp, `de6d5d30` +19.9pp) moved nothing, and two of the
+three label-moves had stage 2 holding *more* headroom than stage 3.
+
+Reasoner-2 is the most budget-pressured stage in absolute terms — mean
+utilisation 56.9% against reasoner-3's 52.4%, and it holds the arm's three
+highest marks (`c21d519d` 100.4%, `fe99bcf9` 92.1%, `de6d5d30` 91.9%) — but
+~4.5pp is far too small to carry an explanation. The mechanism is real in
+exactly one case: in `opus-fe99bcf9`, stage 2 at 92.1% left f3 `INCONCLUSIVE`
+citing missing material, and stage 3 at 80.3% read that material and rejected
+it. That is a single-case story. It is recorded here as tested and not
+supported, **not** as a standing limitation of the design.
+
+### The harness is demonstrably binding, and that is measurable
+
+Reviewers cannot enumerate the filesystem: the adapter hard-sets `--tools Read`
+as a prompt-injection defence, there is no Grep or Glob, and directory reads
+fail with `EISDIR`. So a reviewer can only open paths it already knows from the
+diff or the handoffs, and cannot discover consumers of an API.
+
+This is no longer a theoretical ceiling. In `opus-de6d5d30` f8, stage 3 wrote
+out its own decision procedure — does `enum zclient_send_status` have a
+negative enumerator? if yes the pointer conversion is clean, if no `-Werror`
+fires — then paged blindly through `lib/zclient.h` at eight offsets, stopped at
+line 745, and returned `INCONCLUSIVE` for not having located the definition
+within budget. The enum is at **line 764**, nineteen lines further on, and it
+contains `ZCLIENT_SEND_FAILURE = -1`. By the stage's own stated logic the
+finding was a `REJECT`. One grep would have closed it.
+
+At least one `INCONCLUSIVE` in this arm is therefore a harness artifact rather
+than a model limitation, which makes the movement figures below undercounts of
+what the *pipeline design* can do. **This arm measures opus-under-this-harness,
+and the harness binds.** The gap was deliberately left unfixed mid-arm, for the
+same fingerprint-uniformity reason as the caps.
+
+### The arm's result depends on the metric, and the metric is not yet chosen
+
+Across 33 stage-2→stage-3 finding pairs in the 9 sealed cases: **3 label
+moves, 4 sub-disposition moves, 26 no movement**, plus 1 new finding
+(`c96a113c`, valid `discovered_via`).
+
+| scoring rule | runs with movement |
+|---|---|
+| disposition label changed | 3 of 9 |
+| label **or** sub-disposition changed | 5 of 9 |
+| stage 3 contributed new verifiable evidence | 7 of 9 |
+
+Label-delta scoring undercounts runs where stage 3 altered a finding by 40%.
+The four sub-moves, all citation-verified: `fd8ee329` f3 (stage 2's claim that
+`assert()` text is lost overturned — `lib/assert/assert.h` shadows the system
+header and expands to `_zlog_assert_failed()`); `9ba8fca7` f4 (stage 2's
+secondary no-op argument shown wrong, rejection re-grounded on
+unreachability); `fe99bcf9` f2 (impact tightened on semantic grounds);
+`fe99bcf9` f4 (leak shown to predate the diff via `isis_te.c:499`).
+
+The 7-of-9 row counts a further four cases where stage 3 added new verifiable
+evidence without changing the claim; those were scored NO_MOVE conservatively.
+**The headline swings from 3/9 to 7/9 on this choice alone**, so the judge
+specification has to make it explicitly rather than inherit it from whichever
+field is easiest to diff. Note also that the retracted cost correlation above
+was an artifact of picking the coarsest of these three rules.
+
+### Spend
+
+True arm cost **$86.91** across all attempts — $67.89 in sealed stages, $13.72
+on the failed case, the remainder retries. Sonnet's full ten cases cost $20.64.
+
+### For `opus-wide.yaml`
+
+Reasoner-2 needs the raise most: it is the stage that failed and it holds the
+arm's three highest utilisations. Since minting that arm is a fingerprint
+change anyway, granting the reviewers search tools in the same change costs
+nothing extra and removes the confound measured above. Never patch either into
+this arm.
 
 ## Hypotheses this raises
 
