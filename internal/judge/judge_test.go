@@ -278,3 +278,28 @@ func TestTwoPromptsExistAndCall1NeverMentionsFindings(t *testing.T) {
 		}
 	}
 }
+
+// The first version of CheckOpaque scanned the id for the finding id as a
+// substring, which is wrong: a 10-char hex id contains "f1" by coincidence
+// often enough that the check failed at random on real data, and passed by
+// luck rather than by construction when it passed. This pins the corrected
+// behaviour - short finding ids must not trip it.
+func TestCheckOpaqueDoesNotFalsePositiveOnShortFindingIDs(t *testing.T) {
+	for _, id := range []string{"f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "c1", "a", "b"} {
+		for _, arm := range []string{"sonnet", "opus-narrow", "opus-wide"} {
+			p := NewPool("case-83d945a6dd4e5785", []PooledFinding{pooled(arm, id, "t", "b")})
+			if err := p.CheckOpaque(); err != nil {
+				t.Errorf("CheckOpaque(%s/%s): %v", arm, id, err)
+			}
+		}
+	}
+}
+
+// The positive property: a hand-set id that is not the hash must be caught.
+func TestCheckOpaqueRejectsAnIDThatIsNotTheHash(t *testing.T) {
+	p := NewPool("case-x", []PooledFinding{pooled("sonnet", "f1", "t", "b")})
+	p.Findings[0].OpaqueID = "sonnet-f1"
+	if err := p.CheckOpaque(); err == nil {
+		t.Errorf("expected an error for an id that is not the hash")
+	}
+}

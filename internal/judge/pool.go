@@ -113,18 +113,28 @@ func (p Pool) Arms() []string {
 // CheckOpaque reports any way the judge's view could betray provenance. It is
 // a test helper promoted to the package because the property it checks is the
 // whole point of pooling, and a leak would be silent.
+//
+// It asserts the id IS the hash, rather than scanning for provenance
+// substrings. A substring scan is the obvious implementation and it is wrong:
+// a 10-character hex id contains short strings like "f1" by coincidence
+// often, so the check fails at random on findings whose ids are short. Worse,
+// it would pass by luck rather than by construction. Deriving the id purely
+// from a hash and verifying that derivation is the property actually wanted.
+//
+// Arm and RunID are still scanned because those are long, meaningful strings
+// whose appearance could not be coincidence.
 func (p Pool) CheckOpaque() error {
 	for _, f := range p.Findings {
-		if f.Arm == "" {
-			continue
+		want := opaqueID(p.CaseID, f.Arm, f.FindingID)
+		if f.OpaqueID != want {
+			return fmt.Errorf("finding %s/%s has id %q, which is not its hash %q",
+				f.Arm, f.FindingID, f.OpaqueID, want)
 		}
-		for _, v := range p.View() {
-			if v.ID != f.OpaqueID {
-				continue
-			}
-			if containsFold(v.ID, f.Arm) || containsFold(v.ID, f.RunID) || containsFold(v.ID, f.FindingID) {
-				return fmt.Errorf("opaque id %q leaks provenance for %s/%s", v.ID, f.Arm, f.FindingID)
-			}
+		if f.Arm != "" && containsFold(f.OpaqueID, f.Arm) {
+			return fmt.Errorf("opaque id %q contains the arm name %q", f.OpaqueID, f.Arm)
+		}
+		if f.RunID != "" && containsFold(f.OpaqueID, f.RunID) {
+			return fmt.Errorf("opaque id %q contains the run id %q", f.OpaqueID, f.RunID)
 		}
 	}
 	return nil
