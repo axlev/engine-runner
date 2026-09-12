@@ -203,17 +203,29 @@ what the *pipeline design* can do. **This arm measures opus-under-this-harness,
 and the harness binds.** The gap was deliberately left unfixed mid-arm, for the
 same fingerprint-uniformity reason as the caps.
 
-### The arm's result depends on the metric, and the metric is not yet chosen
+### The arm's result depends on the metric
 
-Across 33 stage-2→stage-3 finding pairs in the 9 sealed cases: **3 label
-moves, 4 sub-disposition moves, 26 no movement**, plus 1 new finding
+**Adopted rule: label *or* sub-disposition movement** — stage 3 is credited when
+it changed a finding's disposition or its actual claim, and not when it only
+added evidence behind an unchanged claim. That gives the arm **5 of 9 runs**.
+
+Across **41** stage-2→stage-3 finding pairs in the 9 sealed cases: **3 label
+moves, 4 sub-disposition moves, 34 no movement**, plus 1 new finding
 (`c96a113c`, valid `discovered_via`).
 
-| scoring rule | runs with movement |
-|---|---|
-| disposition label changed | 3 of 9 |
-| label **or** sub-disposition changed | 5 of 9 |
-| stage 3 contributed new verifiable evidence | 7 of 9 |
+| scoring rule | runs | findings |
+|---|---|---|
+| disposition label changed | 3 of 9 | 3 of 41 (7.3%) |
+| label **or** sub-disposition changed — *adopted* | 5 of 9 | 7 of 41 (17.1%) |
+| stage 3 contributed new verifiable evidence | 7 of 9 | 11 of 41 (26.8%) |
+
+**Report the per-finding rate alongside the per-run rate, and prefer it for
+cross-arm comparison.** Per-run movement scales with how many findings a run
+has available to move, and the arms differ sharply there: sonnet found 19
+findings across 10 cases (mean 1.9), opus 41 across 9 (mean 4.6). One sonnet
+case found *zero* findings and so cannot show movement under any rule, making
+its scoreable denominator 9, not 10. A per-run comparison between arms of
+unequal finding density measures discovery volume as much as falsification.
 
 Label-delta scoring undercounts runs where stage 3 altered a finding by 40%.
 The four sub-moves, all citation-verified: `fd8ee329` f3 (stage 2's claim that
