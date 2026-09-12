@@ -155,15 +155,49 @@ still counts change, not improvement. It inherits the shape both prior
 metrics died of. Shipping it as the project's headline would be the third
 failure, with better arithmetic.
 
-**What changes that is ground truth, and it already exists.** Every one of the
-ten cases has a `correlated-report.json` under
-`<case>-evaluator-only/`. Nothing in this engine reads it (backlog Phase 2).
-With it, "C rejected this finding" becomes "C correctly rejected a false
-positive" or "C wrongly rejected a real defect" — which is the difference
-between measuring change and measuring improvement, and the only thing that
-makes any A→C or B→C number worth publishing.
+**What would change that is ground truth. It does not currently exist.**
 
-Two constraints on doing that, both real:
+> **Corrected.** This section previously claimed ground truth "already
+> exists," and that with it "C rejected this finding" becomes "C correctly
+> rejected a false positive" or "C wrongly rejected a real defect." **That is
+> wrong, and it was the load-bearing claim in the recommendation below.**
+
+Every one of the ten cases has a `correlated-report.json` under
+`<case>-evaluator-only/`, and nothing in this engine reads it (backlog Phase
+2). But that file is **graded corrective-signal evidence, not a labelled
+defect list.** Its top-level keys are `schema_version`, `original`,
+`stateful`, `retrospective`, `provenance`, and what it carries is:
+
+- `retrospective.strong_signals` — `FIXES_SHA`, `FIXES_PR`, `EXPLICIT_REVERT`,
+  `REGRESSION_MENTION`, each with a `source_ref` (the later fixing commit),
+  a `raw_snippet` (the matched commit-message line), a `confidence`, and
+  `changed_paths` (paths the *fixing* commit touched).
+- `retrospective.medium_signals` — as above, plus `function_or_path`.
+- `retrospective.weak_signals` — `SAME_FILE_MODIFICATION`,
+  `SAME_SYMBOL_DIFFERENT_PATH`, with a `file_path`.
+- `retrospective.commit_relationships[].reversal` — line-overlap evidence, all
+  of it **integer counts** (`original_removed_lines`,
+  `reversed_line_overlap_count`, per-path counts under `path_overlaps[]`).
+  No line numbers, no line content.
+- `stateful` — the miner's own heuristic score. That is a guess, not truth.
+
+**There is no per-defect location, no mechanism description, and no
+true/false-positive label.** The strongest claim the record supports is
+case-level: *a later commit corrected this PR, and it touched these paths.*
+
+So the oracle can score **correspondence** — did the reviewer flag a path the
+fix touched — at per-path granularity, rankable by reversal overlap. It cannot
+adjudicate an individual finding as right or wrong. And correspondence without
+correctness is precisely the shape both prior metrics died of.
+
+Getting to correctness requires deriving the mechanism from the **fixing
+commit's diff**, which the oracle references only by SHA. That is a new
+pipeline step, plausibly a miner change rather than an engine one, and the
+fixing commit may not be present in any bundle currently held. **Whether that
+derivation is in scope is the prior question to the matching rule** — it
+decides whether this benchmark can measure correctness at all.
+
+Two constraints on doing any of it, both real:
 
 - The miner's export contract marks that directory **"evaluator-only; must
   never be exposed to an engine"** (`docs/export-contract.md`). So the judge
@@ -175,6 +209,12 @@ Two constraints on doing that, both real:
   analysis blind is a convention, not a mechanism, and it has already been
   relied on for every disposition judgment recorded about this cohort.
 
-So the order I would recommend: wire the oracle first, then choose the
-mapping with the oracle available to validate it. A mapping can be judged
-against ground truth. Judged against nothing, it is a preference.
+So the order I would recommend: build the oracle ingest first, then choose the
+mapping with the oracle available to validate it. A mapping judged against
+evidence beats one judged against nothing.
+
+But the recommendation is weaker than it was before the correction above. The
+oracle validates a mapping only as far as *correspondence* reaches, and
+correspondence is not the property we need. Until mechanism derivation is
+either in scope or ruled out, "wire the oracle" means building the thing that
+derives answers from evidence — not wiring up answers that are already there.
