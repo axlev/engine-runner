@@ -90,6 +90,39 @@ finding set was nil.
   genuinely failing to falsify is answerable only by reading its `rationale`
   fields — see `analysis-session-prompt.md`.
 - Contamination was probed, not assumed: `contamination-probe-pilot-v1.md`.
+- **Every figure here is a B→C measurement.** The increment the project
+  defines is A→C. See the section below; this is not a caveat on the numbers,
+  it is a statement that they answer a different question.
+
+### The reproducibility ceiling is above our heads
+
+`fingerprints` now records the protocol, the arm config (model, effort,
+budgets, tool grant), the prompts, the schemas, the input bundle, the resolved
+tool set, the CLI version *inside* the image, the image content digest, and the
+credential kind. That is a strong audit chain and it stops at the network
+boundary.
+
+**`claude-opus-5` resolves to whatever is being served at the time.** The
+container has unrestricted egress (`NetworkPolicy: NetworkEnabled`, itself a
+deferred decision in system-design §16), so two runs with byte-identical
+fingerprints can execute different model weights. No local record can close
+this, and no change to this design can either.
+
+So arm-to-arm comparisons are only as sound as the assumption that the served
+model did not move between them — an assumption that gets weaker the further
+apart in time two arms run. The sonnet arm and the opus arms were run on
+different days. This bounds every comparison in this document, and it is the
+reason a re-run is not the same thing as a replication.
+
+Lesser gaps, all recorded rather than fixed: `-adapter-image` is a CLI flag
+with no declared source, so the image that *ran* is auditable but the image
+that *should* run is not declared anywhere; `max_wall_clock_seconds` is
+enforced by our own context rather than the vendor, which makes host speed an
+input (narrow `c21d519d` r2 ran at 96% of its bound, so this is live);
+`runner.ResourceLimits` is declared and never populated, so containers run
+unbounded and nothing would record it if that changed; and prompt-cache state
+moves cost without moving output, which matters only because budgets are
+enforced on cost and can therefore decide whether a stage is killed.
 
 ## The null may be about sonnet, not about staging
 
