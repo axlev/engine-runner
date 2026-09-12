@@ -86,8 +86,79 @@ Consequences for the matching rule (backlog 2.3, alex's call):
 - **mechanism-only, location-agnostic** — not implementable, same reason.
 
 The record does contain the *pointer* to the mechanism: `source_ref` is the
-fixing commit. Deriving a mechanism means fetching and reading that commit's
-diff, which is a new pipeline step and the prior question to choosing a rule.
+fixing commit. Deriving a mechanism means materialising that commit's diff —
+which `miner retrospective-export` already does; see below.
+
+## The scoreable base is 18, not 174
+
+`miner retrospective-export` was run against all ten cases
+(`output/frr-pilot-retrospective-evaluator-only/`). **Materialization is
+perfect — 174 of 174 commits, no `missing`, no `metadata_only`, no errors** —
+so nothing was force-pushed away or stranded on an unmerged branch. That
+answers "did materialization work". It is not the number that matters.
+
+**Reach is 7 of 10 cases.** `3a74a3a2`, `9ba8fca7` and `c96a113c` carry zero
+signals at any tier. No corrective evidence means no mechanism comparison, and
+that is emphatically **not** "no defect" — it is no evidence either way.
+
+**And the 174 is dominated by the weakest evidence.** Signals by tier across
+the cohort:
+
+| tier | count | what a signal means |
+|---|---|---|
+| strong | **18** | `FIXES_SHA` / `FIXES_PR` / `EXPLICIT_REVERT` / `REGRESSION_MENTION` — a maintainer stated this commit fixes that PR |
+| medium | 153 | heuristic `function_or_path` match |
+| weak | 72 | `SAME_FILE_MODIFICATION` / `SAME_SYMBOL_DIFFERENT_PATH` — a later commit touched the same file |
+
+A weak signal asserts only that *some* later commit touched this file.
+Comparing a reviewer's finding against such a commit's diff is not evidence;
+it is noise shaped like evidence. So **the population that can support a
+correctness claim is the strong tier: 18 signals across 7 cases**, at 1, 1, 3,
+3, 2, 5, 3 per case.
+
+**This also explains the cohort's skew, and reframes it.** `de6d5d30` holds 116
+of the 174 commits (67%) and 53 of the 76 logical patches, against a median
+scoreable case of 6. But it holds **105 of the cohort's 153 medium signals
+(69%)**, and its strong-signal count is 3 — the same as two other cases. So the
+concentration is a property of how many later commits touched those files, not
+of how broken that PR was.
+
+The consequence for rule design is that **tier selection matters more than
+case weighting.** An unweighted correspondence rate over all tiers would be
+dominated by one case and would reward findings in high-churn areas — a
+quantitative restatement of correspondence-is-not-correctness. Scoring on the
+strong tier alone largely dissolves the skew (3 of 18 rather than 116 of 174),
+at the cost of an 18-item base.
+
+Note also that strong signals are rare in *every* case (1-5). There is no case
+where the strongest evidence is plentiful.
+
+### Measure tier sensitivity before choosing a tier
+
+The two prior metric failures in this project both came from choosing a
+threshold by convenience and discovering afterwards that the threshold carried
+the result — label-delta scoring manufactured a spurious cost correlation, and
+an A→C confidence threshold swung sonnet from 47% to 89% on identical data. The
+tier threshold here is the same kind of knob.
+
+So it is to be **measured, not picked**: report correspondence at strong-only,
+strong+medium, and all-tiers, and see how far the answer moves. If the tiers
+agree, the choice is free and the contract should say so. If they diverge, the
+divergence is the finding and it belongs in front of whoever chooses.
+
+**One caveat on who may run that measurement.** Tier sensitivity requires
+matching reviewer findings against the paths the signals name, and those paths
+say where the defect was. Any agent that reads per-case or per-finding output
+is de-blinded for those cases. The measurement must therefore emit **aggregate
+rates per tier only** if a blind analyst is to run it; per-case scoring is work
+for an agent that is not doing blind analysis.
+
+This is already load-bearing rather than hypothetical: reporting *which* cases
+have zero corrective signals is itself weakly answer-adjacent, so the analyst
+who produced the coverage table above is no longer fully blind on `3a74a3a2`,
+`9ba8fca7` and `c96a113c`. Per-finding judgments are unaffected — nothing in a
+zero-signal fact speaks to whether an individual finding was right — but the
+limitation is recorded rather than assumed away.
 
 ## Where mechanism derivation should live
 
