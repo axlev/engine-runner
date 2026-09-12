@@ -69,17 +69,20 @@ Items that did not exist as questions until real cases ran.
 
 ## Phase 2 — the judge
 
-Nothing here exists yet. There is no oracle ingest anywhere in the engine, and
-no oracle bundle contract — only
-[`prospective-bundle-contract.md`](prospective-bundle-contract.md). The miner
-already emits `case-*-evaluator-only/` directories that this side cannot read.
+The oracle is ingested and the judge is built. The decisive discovery of this
+phase was that the oracle carries **graded corrective-signal evidence, not
+labelled defects** — see [`oracle-bundle-contract.md`](oracle-bundle-contract.md).
+Mechanism comparison exists only because `miner retrospective-export`
+materialises the fixing commits' diffs, which it does from the bare clone at
+`/home/alex/data/FRR20260821/data/repos/FRRouting/frr.git`.
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 2.1 | Oracle bundle contract | **Absent** | The counterpart to the prospective contract. Must state what the evaluator receives and, as that document does, why. |
-| 2.2 | Oracle ingest | **Absent** | §6.5: an LLM judge **must run as a separate evaluator-only agent and must never share state or a filesystem with reasoners 1-3.** That is a second isolated adapter path, not a function call. Today's deterministic evaluator needs no such isolation only because it has no oracle access to protect. |
-| 2.3 | **Matching semantics** | **Needs a decision** | "Did the reviewer find *this* defect?" — same file, same function, same mechanism? **This determines what the benchmark claims** and is the user's call, not the engine's. Specify it from Phase 1 output rather than in advance. |
-| 2.4 | Precision / recall, and correct-vs-incorrect rejection | **Absent** | Today's evaluator computes reviewer-side metrics only: what stages 2 and 3 did with stage 1's findings. It cannot say whether any finding is *right*, so false-positive suppression cannot distinguish a correct rejection from a wrong one. |
+| 2.1 | Oracle bundle contract | **Integrated** | [`oracle-bundle-contract.md`](oracle-bundle-contract.md). Verified against all ten real records by keys-and-types-only inspection. Records the per-path granularity ceiling (every line-level field is an `int`), the scoreable base (**18 strong signals, not 174 commits**), and that isolation is a property of the contract rather than a convention. |
+| 2.2 | Oracle ingest | **Integrated** | `internal/oracle`. Implements **no** matching rule; `Evidence.ByPath` is the shared primitive. `stateful`/`retrospective` disagreement surfaces as `StatefulConflict` rather than being averaged. Isolation guard scans the five review-path packages for both imports *and* string references to evaluator-only markers, verified by planting a probe and watching it fire rather than assuming. |
+| 2.3 | **Matching semantics** | **Verified** | **Decided.** Path correspondence was measured and **rejected as a score**: it ranks sonnet *highest* (84.2% vs opus-narrow 61.0%, opus-wide 63.3%), inverting every other metric, because extra findings land on peripheral files a fix is less likely to touch — so it rewards finding less. Retained as a *coverage diagnostic* only. The adopted rule is **mechanism agreement** against the materialised fixing diffs, strong tier only. The weak tier is exactly redundant for path matching (all-tiers equals strong+medium in every cell). Tested on fixtures; not yet validated against real judge output. |
+| 2.4 | Precision / recall, and correct-vs-incorrect rejection | **Verified** | `internal/judge`. Two-call design: fix mechanisms described with the findings **absent from context**, then verdicts against those frozen mechanisms — the ordering defence made structural rather than requested. Four verdicts: `MECHANISM`, `LOCALITY_ONLY`, `NONE`, `TOO_VAGUE`, with `LOCALITY_ONLY` kept distinct so rationalisation is *measurable* (high `MECHANISM` with near-zero `LOCALITY_ONLY` is the tell). `TOO_VAGUE` is excluded from the precision denominator, and because that makes vagueness free, `Rates()` returns precision and vagueness together with **no `Precision()` accessor** — the figure cannot be obtained without the tell. Recall counts only `MECHANISM`. Zero-signal cases excluded from every denominator and reported as excluded. Tested on fixtures; first real run in flight. |
+| 2.5 | **Cross-vendor judge check** | **Blocked** | Two of three arms are opus and so is the judge, so every judge figure carries "judged by an in-family model; cross-vendor check pending". Opaque-ID pooling — hash-derived ids, deterministic ordering, arm identity held outside the judge call — is a *mitigation*, not an elimination. `internal/adapters/codex` exists and would be a genuine outside judge. Blocked on three gaps: `codex exec --json` is output *format*, not a JSON **schema**, and the judge's strongest guarantees are schema guarantees (`fix_mechanisms` generated first, `fix_id` forbidden unless matched, `case_against` required) which would degrade to validate-and-retry — itself biasing toward outputs that happen to validate; **no image is built**; and `codex.go:125` leaves usage at zero, so cost is untracked and budgets unenforced except on wall clock. No `OPENAI_API_KEY` configured. Roughly a day. Cheapest useful form is re-judging the same 7 cases and comparing verdicts: agreement retires the concern, divergence **measures** the bias, and either beats arguing about it. |
 
 ## Phase 3 — reporting
 
