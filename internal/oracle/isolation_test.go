@@ -76,6 +76,63 @@ func TestOracleIsUnreachableFromTheReviewPath(t *testing.T) {
 	}
 }
 
+// evaluatorOnlyMarkers are the on-disk locations that hold answer-key data.
+// Importing internal/oracle is not the only way to read them: any code can
+// open a path by string.
+//
+// The second entry matters more than the first. `-evaluator-only` holds the
+// miner's correlated record, which is graded *evidence* - hints about whether
+// a later commit corrected the change. `retrospective-evaluator-only` holds
+// the materialised fixing commits and their patches, which is the actual fix
+// at line granularity. Evidence can mislead a reader; the patch simply is the
+// answer.
+var evaluatorOnlyMarkers = []string{
+	"-evaluator-only",
+	"retrospective-evaluator-only",
+	"correlated-report.json",
+}
+
+// TestReviewPathNamesNoEvaluatorOnlyPath closes the door the import guard
+// leaves open. A reasoner adapter that built a mount path by string
+// concatenation would never import this package and would still hand the
+// answer key to a model.
+func TestReviewPathNamesNoEvaluatorOnlyPath(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	type hit struct{ file, marker string }
+	var hits []hit
+
+	for _, pkg := range reviewPathPackages {
+		root := filepath.Join(repoRoot, pkg)
+		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() || !strings.HasSuffix(path, ".go") {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			for _, m := range evaluatorOnlyMarkers {
+				if strings.Contains(string(data), m) {
+					hits = append(hits, hit{path, m})
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walking %s: %v", pkg, err)
+		}
+	}
+
+	for _, h := range hits {
+		t.Errorf("%s names %q. The review path must not reference evaluator-only data by "+
+			"path any more than by import: a mount built from a string reaches a model just "+
+			"as effectively as a function call.", h.file, h.marker)
+	}
+}
+
 // TestNoRealOracleContentInFixtures guards the other direction of the same
 // discipline. The fixtures this package tests against must stay synthetic:
 // a real correlated-report.json copied in would put the pilot cohort's answer

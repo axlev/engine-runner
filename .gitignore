@@ -12,3 +12,15 @@
 /docker/codex-code-mode-host
 tmp
 .tmux.conf
+
+# Evaluator-only data must never enter this repository. It lives outside it
+# (the miner's gitignored output/), and these patterns exist so that a copy
+# made here by mistake is caught by git rather than by a reviewer.
+#
+# The retrospective export is the more dangerous of the two: the correlated
+# record is graded evidence, but patches/*.patch is the actual fix at line
+# granularity. A patch committed here would be in published history and
+# unrecoverable as a mistake.
+*-evaluator-only/
+correlated-report.json
+patches/*.patch
