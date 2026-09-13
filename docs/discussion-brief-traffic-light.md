@@ -35,9 +35,19 @@ Discovery dominates — about 60% of spend and 76% of input tokens.
 
 ## The cohort
 
-Ten real FRR pull requests, each with a known outcome: a later commit
-explicitly corrected a defect the PR introduced (`Fixes:` trailer, revert, or
-regression report). The reviewers never see that later commit.
+Ten real FRR pull requests, deliberately split into two classes. The reviewers
+never see the later history either way.
+
+- **7 positives.** A later commit explicitly corrected a defect the PR
+  introduced (`Fixes:` trailer, revert, or regression report). These carry
+  between 1 and 5 such corrective commits each.
+- **3 negatives.** No corrective commit in a roughly two-year window. Selected
+  deliberately as a control class, so that findings reported on them can be
+  counted as probable false positives.
+
+A negative is weaker evidence than a positive: "nobody fixed it" also describes
+a real bug nobody has noticed. Treat the negatives as a false-alarm estimate,
+not as proof the code is clean.
 
 Three arms were run over the same ten cases:
 
@@ -94,13 +104,54 @@ No difference between arms is statistically significant on any metric
 (Fisher p = 0.74 for the largest gap). Arm ordering even reverses under a
 different judge configuration.
 
+## Results on the negative class
+
+On the 3 negative PRs, every finding that survives to output is a probable
+false positive. Final dispositions after all three stages:
+
+```
+                CONFIRMED  NARROWED  REJECTED  INCONCL   total   survived
+arm A                   1         0         1        0       2    1 (50%)
+arm B                   4         5         4        1      15    9 (60%)
+arm C                   3         6         6        0      15    9 (60%)
+all                     8        11        11        1      32   19 (59%)
+
+for comparison, the 7 positives:
+all                    30        33        13        2      79   63 (80%)
+```
+
+**The pipeline suppresses more on clean PRs than on buggy ones — 41% versus
+20%, Fisher p = 0.034.** This is the only statistically significant result the
+project has produced. Stage 3 moved only 4 findings in total, so this is almost
+entirely stage 2.
+
+Findings surviving to output, per PR:
+
+```
+        clean PR   buggy PR   ratio     p
+arm A       0.33       1.71     5.1   0.126
+arm B       3.00       3.29     1.1   1.000
+arm C       3.00       4.00     1.3   0.591
+```
+
+Arm A discriminates far better on this measure, but **not significantly** —
+counts of 1 versus 12. Arms B and C produce nearly as many surviving findings
+on a clean PR as on a defective one.
+
 ## Four constraints on what this data can say
 
-- **The metric proves harm, never benefit.** A rejection that killed a real
-  defect is provable — the fix exists. A rejection that correctly killed a
-  non-defect is unprovable, because "no later fix" also describes a real bug
-  nobody has fixed yet. So 28.6% is a *lower bound* on precision by an
-  unmeasurable margin.
+- **On the positive cases the metric proves harm but not benefit.** A rejection
+  that killed a real defect is provable — the fix exists. A rejection that
+  correctly killed a non-defect is not, because "no later fix" also describes a
+  real bug nobody has noticed. So 28.6% is a *lower bound* on precision by an
+  unmeasurable margin. The negative class above partly escapes this: elevated
+  suppression on clean PRs is measurable benefit, at the strength a two-year
+  quiet window supports.
+- **False negatives are dominated by discovery, not filtering.** Of 18 real
+  defects, 8 were never described by any arm, and 1 was described and then
+  rejected with no other finding covering it. So misses outnumber
+  over-filtering roughly 8 to 1. Redundancy across arms absorbed 2 of the 3
+  cases where a true finding was killed.
 - **Stage 3 is nearly inert**, so almost nothing can be concluded about it in
   either direction from this cohort.
 - **Every stage used the same model within an arm.** Stage 3 verifying stage 2
