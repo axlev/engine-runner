@@ -148,20 +148,41 @@ On the 3 negative PRs, every finding that survives to output is a probable
 false positive. Final dispositions after all three stages:
 
 ```
-                CONFIRMED  NARROWED  REJECTED  INCONCL   total   survived
-arm A                   1         0         1        0       2    1 (50%)
-arm B                   4         5         4        1      15    9 (60%)
-arm C                   3         6         6        0      15    9 (60%)
-all                     8        11        11        1      32   19 (59%)
+                CONFIRMED  NARROWED  REJECTED  INCONCL  NO_DISP   total  survived
+arm A                   1         0         1        0        0       2   1 (50%)
+arm B                   4         5         4        1        1      15   9 (60%)
+arm C                   3         6         6        0        0      15   9 (60%)
+all                     8        11        11        1        1      32  19 (59%)
 
 for comparison, the 7 positives:
-all                    30        33        13        2      79   63 (80%)
+all                    30        33        13        2        1      79  63 (80%)
 ```
 
-**The pipeline suppresses more on clean PRs than on buggy ones — 41% versus
-20%, Fisher p = 0.034.** This is the only statistically significant result the
-project has produced. Stage 3 moved only 4 findings in total, so this is almost
-entirely stage 2.
+`NO_DISP` is a finding present in the results with no final disposition
+assigned — a pipeline data-integrity gap, 2 findings across the cohort. An
+earlier revision of this brief omitted that column while keeping the totals, so
+the rows did not reconcile.
+
+**The pipeline suppresses more on clean PRs than on buggy ones — 39% versus
+19%.**
+
+> **Retracted as a significance claim.** An earlier revision called this "the
+> only statistically significant result the project has produced" on a
+> finding-level Fisher test, p = 0.034. That test treats 111 findings as
+> independent when findings cluster within PRs, and there are only 10 PR
+> clusters of which 3 are negative. The **exact PR-level permutation test over
+> all 120 labellings gives p = 0.19-0.22 two-sided, 0.12 one-sided** — not
+> significant. Per-PR suppression rates show why: one negative PR sits at 0.73
+> and carries the effect, while another sits at 0.08, *below* four of the seven
+> positives. The Fisher figure also straddles 0.05 on a two-finding definitional
+> choice (0.0483 / 0.0515), so it was never safe to quote independently of the
+> clustering problem.
+>
+> The suppression *pattern* stands as a lead. "Stage 2 discriminates between
+> clean and buggy PRs" does not. **The project has no result at p < 0.05.**
+
+Stage 3 moved only 4 findings in total, so whatever the pattern reflects is
+almost entirely stage 2.
 
 Findings surviving to output, per PR:
 
