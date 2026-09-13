@@ -1,0 +1,153 @@
+# Discussion brief: where is the real value in an LLM PR reviewer?
+
+This brief is given **verbatim and identically** to two models from different
+vendors, each answering independently before seeing the other's response. It is
+self-contained: no repository access is required, and none of the numbers below
+require you to look anything up.
+
+Do not treat any framing here as the expected answer. The person asking has an
+opinion and has deliberately kept it out of this document.
+
+---
+
+## What was built
+
+A code-review pipeline for real pull requests in FRR (a large open-source C
+routing suite: ~7,600 files, ~76 MB per snapshot). It runs three LLM stages in
+sequence over one PR diff plus the full source tree as of that commit:
+
+1. **reasoner-1 — discovery.** Reads the diff and surrounding code, asked to
+   favour recall, and outputs a list of candidate defects with evidence.
+2. **reasoner-2 — substantiation.** Receives the diff, the tree, and stage 1's
+   findings. Must build a causal chain from actual repository lines for each
+   finding, then rule it `CONFIRMED`, `NARROWED`, `REJECTED` or `INCONCLUSIVE`.
+   A rejection requires a positive reason (a guard upstream, an unreachable
+   path, an invariant the caller maintains) — "I could not confirm it" must be
+   `INCONCLUSIVE`, not `REJECTED`.
+3. **reasoner-3 — adversarial verification.** Receives both handoffs. Asked to
+   try to overturn stage 2's dispositions.
+
+Reviewers get read-only file access. Each stage's prompt, model, budget and
+tool set is hashed into the run's fingerprint.
+
+**Cost: roughly $8 per PR** across the three stages on a frontier model.
+Discovery dominates — about 60% of spend and 76% of input tokens.
+
+## The cohort
+
+Ten real FRR pull requests, each with a known outcome: a later commit
+explicitly corrected a defect the PR introduced (`Fixes:` trailer, revert, or
+regression report). The reviewers never see that later commit.
+
+Three arms were run over the same ten cases:
+
+| arm | model | tools | outcome |
+|---|---|---|---|
+| A | mid-tier frontier | read-only | 10/10 cases, 19 findings, $21 |
+| B | top-tier frontier | read-only | 9/10 cases, 41 findings, $87 |
+| C | top-tier frontier | read + grep + glob | 10/10 cases, 50 findings, $80 |
+
+## What was measured, and what happened
+
+Five metrics were tried. **Four failed, and they failed in the same way: each
+could be improved by making the system worse.**
+
+1. **Disposition-label movement** — how often stage 3 changed a stage-2 verdict.
+   Improved by a *worse* stage 2, since that leaves more for stage 3 to repair.
+2. **Sub-disposition movement** — stage 3 changing a finding's claim without
+   changing its label. Same defect, and demonstrated: arm C had a measurably
+   better stage 2 and scored **zero** on this metric against arm B's four.
+3. **Path correspondence** — does a finding land on a file the later fix
+   touched. Ranked arm A (fewest findings) **highest**, inverting every other
+   measurement, because extra findings land on peripheral files a fix is less
+   likely to touch. A benchmark scored this way tells you to find less.
+4. **Confidence-threshold scoring** — a tunable threshold moved one arm's
+   headline from 47% to 89% on identical data.
+
+5. **Mechanism agreement** (the one that works). An independent LLM judge, given
+   the later fix's actual diff, decides whether each finding names *the same
+   defect the fix repaired* — not the same file, the same mechanism. Judged
+   blind to which arm produced which finding.
+
+## Results from the working metric
+
+Across 7 scoreable cases and 77 findings (3 of 10 cases had no corrective
+evidence and are excluded entirely):
+
+```
+findings naming a real, later-fixed defect     22 / 77  = 28.6%
+  (a lower bound on precision - see below)
+real fixes anticipated by some finding          10 / 18  = 55.6%
+
+by arm, fixes anticipated:   A 3/18   B 6/18   C 5/18
+best single arm 6/18 = 33%        all three pooled 10/18 = 56%
+overlap: only 4 of 14 arm-matches are duplicates
+```
+
+**Stage 3's total footprint: it changed the disposition of 4 findings out of
+77.** Not four that were wrong — four it touched at all.
+
+**Stage 2 wrongly rejected 3 findings that later real fixes vindicated. Stage 3
+rescued none of the three.**
+
+No difference between arms is statistically significant on any metric
+(Fisher p = 0.74 for the largest gap). Arm ordering even reverses under a
+different judge configuration.
+
+## Four constraints on what this data can say
+
+- **The metric proves harm, never benefit.** A rejection that killed a real
+  defect is provable — the fix exists. A rejection that correctly killed a
+  non-defect is unprovable, because "no later fix" also describes a real bug
+  nobody has fixed yet. So 28.6% is a *lower bound* on precision by an
+  unmeasurable margin.
+- **Stage 3 is nearly inert**, so almost nothing can be concluded about it in
+  either direction from this cohort.
+- **Every stage used the same model within an arm.** Stage 3 verifying stage 2
+  is therefore the same reasoner run twice — same weights, same priors, same
+  evidence. This is an untested explanation of stage 3's inertness that does
+  not require any capability difference.
+- **One real bug in the cohort was found by none of the three arms**, and was
+  noticed incidentally by a separate throwaway agent doing an unrelated task:
+  an infinite loop in code the PR added.
+
+---
+
+## The question
+
+The intended product is a **"traffic light" for a pull request** — a signal a
+human reviewer would actually act on, powered by current frontier models.
+
+**Where is the real value, and what is the cheapest signal that would change a
+reviewer's behaviour on a PR?**
+
+Candidate framings, none endorsed, not an exhaustive list:
+
+- Staged verification is sound and the measurement is what failed.
+- Staged verification is the wrong architecture; independent reviewers plus
+  agreement between them is the useful signal, and no adjudication stage is
+  needed.
+- The useful output is not a verdict but something else — a ranked list, a
+  targeted question, a test to run.
+- 28.6% precision makes any per-finding signal unusable, and the only viable
+  product operates at PR granularity rather than finding granularity.
+- The whole retrospective framing is wrong, because agreement with what
+  maintainers later fixed is not the same as usefulness to a reviewer today.
+
+## What your answer must contain
+
+1. **A position.** Commit to one. "It depends" and a survey of options are
+   non-answers.
+2. **Your reasoning**, tied to specific numbers above. Say which number is load
+   bearing for your position.
+3. **The strongest argument against your own position**, stated concretely
+   enough that someone could check it. Not "there is uncertainty."
+4. **A falsifiable prediction with a price.** "Run experiment X; if the result
+   is Y, I am wrong." Include roughly what X costs, given ~$8/PR for a
+   three-stage run and ~$2/PR for a single stage.
+5. **What you would stop doing.** Something in the current design should be
+   abandoned. Name it.
+
+Be concrete and be willing to be wrong. A confident, checkable, incorrect
+answer is more useful here than a hedged correct one, because the incorrect one
+can be tested.
