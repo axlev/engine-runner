@@ -342,3 +342,217 @@ so it may be shaped to confirm what that model already concluded. But a test is
 checkable in a way a rationale is not — it runs or it does not, and its result
 is a fact rather than an argument. Test quality needs auditing, which is a far
 better position than test quality being unknowable.
+
+---
+
+# The falsifier run: did the pipeline throw away real bugs?
+
+*Written to be readable without the rest of this document.*
+
+## The goal
+
+Stage 2's job includes **rejecting** findings — saying "stage 1 claimed this is
+a bug, and it isn't." On this cohort it rejected 19 findings outright.
+
+That rejecting is supposed to be valuable. A review tool that reports 50
+possible bugs, 45 of which are imaginary, is worse than useless — somebody has
+to read all 50. So a stage that correctly discards the imaginary ones is doing
+real work.
+
+But nobody had ever checked whether those rejections were **right**. If stage 2
+is throwing away genuine bugs, it is actively harmful. If it is throwing away
+noise, it is the most valuable part of the pipeline. Same behaviour, opposite
+conclusions, and we could not tell them apart.
+
+**The goal was to find out: of the 19 findings stage 2 rejected, how many were
+real bugs it should have kept?**
+
+## Why the oracle could not answer it
+
+The "oracle" is our retrospective evidence: for each pull request, which later
+commits fixed a bug it introduced. If a reviewer's finding matches one of those
+later fixes, the finding was real — a maintainer confirmed it by fixing it.
+
+That gives us an answer in **one direction only**:
+
+- Finding matches a later fix → **it was a real bug.** So rejecting it was
+  wrong. Proven.
+- Finding matches nothing → **we learn nothing.** It could be imaginary. Or it
+  could be a real bug nobody has fixed yet. Or a real bug whose fix our
+  evidence failed to capture. Three very different situations that look
+  identical from here.
+
+So the oracle can prove a rejection **wrong** and can never prove one
+**right**. Three of the 19 rejections are provably wrong by this route. For the
+other 16 the oracle is silent, and "silent" is not "correct".
+
+That is a hard ceiling, not a gap to be closed with more data. It is why this
+document says elsewhere that the benchmark demonstrates harm and never benefit.
+
+## What a falsifier is, and why it escapes that ceiling
+
+When stage 2 assesses a finding it must also write a **`proposed_test`**: the
+smallest check that would settle the question. Not a test suite — one check,
+specific enough that if it passes the finding is refuted and if it fails the
+finding is real. Every single assessment in the cohort has one, 90 of 90, and
+none had ever been run.
+
+Example, from a rejected finding:
+
+> `grep -rn 'isis_adj_state_change(' isisd/` and check each hit that can pass
+> `ISIS_ADJ_DOWN`: the finding is refuted if every such caller either returns
+> immediately, re-checks the pointer for NULL, or holds no copy.
+
+The key property: **a falsifier asks a question about the code, not about what
+maintainers did later.** It does not care whether anyone ever noticed the bug.
+So unlike the oracle it can come back with "this finding is genuinely wrong" —
+which is exactly the answer the oracle can never give.
+
+That is the whole reason for doing this: it is the only available route to
+measuring whether the pipeline's rejections are *correct*, rather than only
+whether they are *catastrophic*.
+
+## How the check was designed, and why
+
+Three decisions, each with a reason.
+
+### 1. Run all 19, not just the 16 unknowns
+
+The obvious plan is to run only the 16 rejections the oracle cannot settle,
+since the other 3 are already known wrong. That plan has a fatal flaw.
+
+Suppose all 16 come back "not a real bug." Have we learned that stage 2's
+rejections were good? **No.** We might instead have learned that our method
+says "not a real bug" to everything. With no case where we know the right
+answer, the two possibilities are indistinguishable — and one of them means
+every number is worthless.
+
+So the 3 provably-wrong rejections were included as a **positive control**: a
+question where the answer is already known, mixed in with the unknowns to test
+the instrument rather than the subject.
+
+- Method says those 3 are real bugs → **the instrument works.** Trust the
+  other 16.
+- Method says those 3 are not real bugs → **the instrument is broken.** The
+  other 16 mean nothing, and we have learned that instead, which is still worth
+  knowing.
+
+### 2. The runner must not know which 3 are the controls
+
+A control only works if it is hidden. Someone who knows "these three are the
+ones that matter" can pass by guessing "real" on those and "not real"
+elsewhere, without doing any of the work.
+
+So the findings were exported with opaque ids (`R1247d66da2` and so on), sorted
+by hash so position encodes nothing, with no oracle data attached. The
+id → provenance mapping was held in a separate file the runner never reads, and
+the analyst who built the export deliberately never computed the join, so even
+*it* does not know which three are the controls.
+
+The run was then done by a separate agent with no knowledge of this project —
+not of the oracle, not of the judge, not of the fact that controls exist at all.
+
+### 3. Distrust both sides
+
+The runner was told explicitly that the finding may be wrong *and* the
+rejection may be wrong, that both were written by language models, that neither
+had been checked, and that its conclusion had to rest on code it had actually
+read or a program it had actually run. `UNRESOLVED` was defined as a legitimate
+answer, because a confident wrong answer is far more damaging here than an
+honest refusal.
+
+## What actually happened
+
+**The toolchain blocked most of it.** Each of the 19 checks needs different
+tooling, so they were classified by attempting them, not by reading them:
+
+| tier | count | what it needs |
+|---|---|---|
+| static | 2 | reading and grepping only |
+| standalone | 3 | `gcc` alone, no FRR build |
+| needs-build | 8 | FRR compiled |
+| needs-topotests | 6 | the test harness, plus root and network namespaces |
+| bare suite re-run | 0 | — |
+
+This machine has `gcc` and `make` but not `autoconf`, `automake`, `libtool`,
+`bison`, `flex`, `libyang` or `pytest`. **So 5 of 19 were runnable; 13 become
+runnable once FRR builds; 6 stay behind the harness.**
+
+All 5 runnable checks were executed. **All 5 came back `NOT_REAL`** — the
+rejection was correct in each case.
+
+**And then the join, which is the part that matters.** The three positive
+controls are:
+
+```
+R55fdfbdbc9   sonnet       fd8ee329   f1   -> needs-build
+Rbae9075a65   opus-wide    c21d519d   f2   -> needs-topotests
+Ree1ed83e7b   opus-narrow  83d945a6   f4   -> needs-topotests
+```
+
+**None of the three was among the 5 that could run.** Every control sits behind
+tooling this machine does not have.
+
+## Bottom line
+
+**We have 5 answers and no reason to believe them yet.**
+
+The design was sound and it did not execute. Without a single control, "all 5
+rejections were correct" is indistinguishable from "our method always says
+correct." That is precisely the failure the control existed to catch, so we
+cannot quietly drop it and report the 5.
+
+A second problem compounds it: **3 of the 5 that ran are in cases the oracle
+excludes entirely** (`3a74a3a2`, `9ba8fca7` — no corrective signal, so nothing
+to compare against ever). Only two sit in scoreable cases, and for both, judge
+and falsifier agree there is nothing there. Two methods agreeing is reassuring
+but not validating — they can be wrong in the same direction.
+
+**What this changes practically:** installing FRR's build dependencies is not a
+convenience, it is required. One control needs a build; two need the topotest
+harness plus root. **Until at least one control runs, the falsifier approach is
+unvalidated — and it is the only route this project has to measuring whether
+stage 2's rejections are correct.**
+
+Nothing here refutes the approach. It says the approach has not been tested
+yet, and names exactly what testing it costs.
+
+## Side findings worth keeping
+
+**Two rejections were right for the wrong reasons.** The runner checked each
+rejection's cited line numbers instead of accepting them, and found:
+
+- `Rd7016fbf21`'s rejection opens by asserting the safety contract "was already
+  in force." It was not: in the pre-image, `del = true` sat inside
+  `else if (old_state == ISIS_ADJ_UP)`, so a non-UP→DOWN transition did not
+  free. The contract genuinely changed. The verdict survives on the *other*
+  legs of the argument — every caller turns out to be safe — but one of its
+  stated reasons is false.
+- `R1247d66da2`'s evidence chain cites a drain loop without noticing that loop's
+  own behaviour (below).
+
+This matters beyond these two cases: a rejection can be correct and still
+contain false reasoning, and only reading the cited lines reveals it. Scoring
+dispositions alone would have marked both as clean.
+
+**A bug nobody in the pipeline found.** While adjudicating something else, the
+runner flagged that in `bgp_evpn.c:6330-6337` — code *added* by the change under
+review — the drain loop
+
+```c
+while (zebra_announce_count(...)) { pop; if (match) … else add_tail; }
+```
+
+never terminates if any FIFO entry has `za_vpn != vpn`. An infinite loop in new
+code, missed by three reviewer arms and by the judge, found incidentally by a
+reviewer that was not being measured. **Needs independent confirmation before
+anyone acts on it** — but if it holds, it is the most valuable single output of
+this exercise, and it arrived from outside the experiment rather than from
+within it.
+
+**One honest gap in the runs.** `Reec3d5a272` was settled by execution for gcc:
+the 3-line enum test compiles silently under `gcc 13.3` and errors only under
+`-fshort-enums`, which a grep shows is never set anywhere in the tree. But FRR
+also builds under clang, clang is not installed here, and so that leg rests on
+the C standard's compatibility rule rather than on a run. Recorded as a partial
+result rather than a clean one.
