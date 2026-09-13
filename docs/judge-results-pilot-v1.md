@@ -141,9 +141,68 @@ the asymmetry below. It is also three out of three.
 
 ---
 
-## Harm and benefit are not symmetric
+## Harm and benefit are not symmetric — for the oracle metric only
 
-**This benchmark can demonstrate harm and never benefit.**
+> **Corrected twice. Read the correction chain below before quoting anything
+> in this section.**
+>
+> **Correction 1 — the exclusion was wrong.** This section originally claimed
+> the benchmark "can demonstrate harm and never benefit", and the limitations
+> section called the exclusion principled: *"Exclusion is not a verdict: no
+> evidence is not no defect."* That reasoning is right for an accidental gap
+> and wrong here. The pilot cohort is **7 positives and 3 designed
+> negatives** — PRs chosen because no corrective commit followed them in a
+> ~2-year window (backlog 1.2: *"the cohort is now fully covered — 7
+> positives and 3 negatives"*). Excluding zero-signal cases discarded the
+> entire control class. Correct suppression **is** measurable, on the
+> negatives, without any oracle. "Never benefit" was an artifact of the
+> exclusion rule, not a property of the data.
+>
+> **Correction 2 — the result that un-excluding produced was also wrong, and
+> it was announced as the project's first significant finding.** Including
+> the negatives gave 39% suppression on clean PRs against 19% on buggy ones,
+> Fisher p = 0.048 (reported at the time as 0.034). **That is retracted.**
+> The test treated 109 findings as independent samples, but findings cluster
+> within PRs and the independent unit is the PR. A cross-vendor reviewer
+> pre-registered that an exact PR-level permutation would land between 0.05
+> and 0.20. It does:
+>
+> | test | unit | p |
+> |---|---|---|
+> | Fisher | finding | 0.048 — **inflated by clustering, retracted** |
+> | exact permutation, one-sided | PR | 0.125 |
+> | exact permutation, two-sided | PR | 0.217 |
+>
+> The per-PR data shows the mechanism directly. The negative class does *not*
+> show consistently elevated suppression — one clean PR carries the entire
+> effect, and another is suppressed *less* than four of the seven positives:
+>
+> | PR | findings | suppressed | rate | class |
+> |---|---|---|---|---|
+> | 9ba8fca7 | 11 | 8 | 0.73 | **negative** — carries the effect |
+> | 3a74a3a2 | 9 | 4 | 0.44 | negative |
+> | c96a113c | 12 | 1 | 0.08 | negative — *lower than 4 of 7 positives* |
+> | c21d519d | 7 | 3 | 0.43 | positive |
+> | 83d945a6 | 12 | 4 | 0.33 | positive |
+> | de6d5d30 | 23 | 5 | 0.22 | positive |
+> | fd8ee329 | 11 | 2 | 0.18 | positive |
+> | deaebcc7 | 8 | 1 | 0.12 | positive |
+> | fe99bcf9 | 8 | 1 | 0.12 | positive |
+> | 322abe6a | 10 | 0 | 0.00 | positive |
+>
+> **What survives:** specificity is the right metric and is now measured. What
+> does *not* survive is the claim that stage 2 discriminates between clean and
+> buggy PRs — that is unsupported, not established. The project still has no
+> result at p < 0.05.
+>
+> **What changed in the code:** `SpecificityReport.PValues()` returns the
+> PR-level permutation p and the finding-level Fisher p *together*, and there
+> is no accessor for the Fisher figure alone — the same inseparability
+> discipline as the anticipation rate and its vagueness count. Any future
+> clean-vs-buggy or arm-vs-arm comparison over findings has this clustering
+> problem, and the type now makes ignoring it require deleting a test.
+
+**For the oracle-based metric, harm and benefit remain asymmetric.**
 
 A `NONE` verdict is three things the judge cannot distinguish: a genuine false
 positive, a real defect nobody ever fixed, or a real defect whose fix the
@@ -269,10 +328,22 @@ caught within hours, because a control was run. **The control cost $2.41.**
   the findings, not of the prompt.
 - **~1 in 77 findings receives no verdict at all** — one per design, in
   different cases. Each shortens a denominator in the flattering direction.
-- **3 of 10 cases are excluded entirely** — `3a74a3a25bda9041` (9 findings),
-  `9ba8fca704a95e70` (11), `c96a113c3301c4fa` (11). No strong-tier corrective
-  signal, so nothing to judge against. **31 findings sit outside the scoreable
-  base of 77.** Exclusion is not a verdict: no evidence is not no defect.
+- **3 of 10 cases carry no fix to judge against** — `3a74a3a25bda9041` (9
+  findings), `9ba8fca704a95e70` (11), `c96a113c3301c4fa` (11). **31 findings
+  sit outside the anticipation base of 77.** These are the cohort's *designed
+  negatives*, not missing data, and they are excluded from anticipation and
+  recall — which need a fix to compare against — while being included in
+  specificity, which does not. The two denominators differ by design and the
+  scorer prints both.
+- **The negative class has no judge data at all.** The judge was never shown
+  those cases, so specificity rests on stage dispositions alone. Specificity
+  and mechanism agreement do not cover the same population, and neither can
+  be read as a check on the other.
+- **Per-arm survival ratios are not significant.** sonnet shows 0.33
+  surviving findings per clean PR against 1.71 per buggy PR — a 5.1x ratio on
+  counts of 1 and 12, PR-level p = 1.000. It is exactly the shape this
+  project has twice written down too early; the scorer flags any cell under 5
+  and prints the PR-level p beside every ratio.
 - **In-family judge.** Cross-vendor check pending (backlog 2.5).
 
 ---

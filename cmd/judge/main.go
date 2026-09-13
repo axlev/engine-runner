@@ -110,6 +110,7 @@ func main() {
 
 	rep, unattributed := judge.Score(scored, index, excludedCases(*cohort, *results))
 	emit(*out, rep, unattributed, totalCost, *single)
+	emitSpecificity(*results)
 }
 
 type caseWork struct {
@@ -463,6 +464,90 @@ func emit(out string, rep judge.Report, unattributed int, cost float64, single b
 	}
 	b, _ := json.MarshalIndent(rep, "", "  ")
 	_ = os.WriteFile(filepath.Join(out, "report-"+strings.ReplaceAll(mode, " ", "-")+".json"), b, 0o600)
+}
+
+// classifyAll walks every sealed run, not just the scoreable ones. Specificity
+// needs the designed negatives, which the anticipation metric correctly
+// excludes - so the two denominators differ and both are printed.
+func classifyAll(results string) []judge.ClassifiedFinding {
+	var out []judge.ClassifiedFinding
+	dirs, _ := filepath.Glob(filepath.Join(results, "*"))
+	sort.Strings(dirs)
+	for _, dir := range dirs {
+		base := filepath.Base(dir)
+		arm := armOf(base)
+		if arm == "" {
+			continue
+		}
+		var run struct {
+			CaseID string `json:"case_id"`
+			Status string `json:"status"`
+		}
+		if !readJSON(filepath.Join(dir, "run.json"), &run) || run.Status != "completed" {
+			continue
+		}
+		var ev struct {
+			Findings []struct {
+				B *string `json:"b_disposition"`
+				C *string `json:"c_disposition"`
+			} `json:"findings"`
+		}
+		if !readJSON(filepath.Join(dir, "evaluation", "findings.json"), &ev) {
+			continue
+		}
+		for _, f := range ev.Findings {
+			c := ""
+			if f.C != nil {
+				c = *f.C
+			}
+			out = append(out, judge.ClassifiedFinding{
+				Arm: arm, CaseID: run.CaseID, Negative: judge.NegativeCases[run.CaseID],
+				Disposition: c, NewByStage3: f.B == nil,
+			})
+		}
+	}
+	return out
+}
+
+func emitSpecificity(results string) {
+	all := classifyAll(results)
+	universe := map[string]bool{}
+	for _, f := range all {
+		universe[f.CaseID] = f.Negative
+	}
+	fmt.Printf("\n=== specificity: survival on DESIGNED NEGATIVES vs positives ===\n")
+	fmt.Println("The cohort is 7 positives + 3 designed negatives (backlog 1.2). Negatives are")
+	fmt.Println("EXCLUDED from anticipation/recall, which need a fix to compare against, and")
+	fmt.Println("INCLUDED here, which does not. The judge never saw them, so the negative class")
+	fmt.Println("has NO mechanism-agreement data - these are stage dispositions only.")
+	for _, inc := range []bool{false, true} {
+		label := "excluding stage-3 discoveries"
+		if inc {
+			label = "including stage-3 discoveries"
+		}
+		s := judge.Specificity(all, inc, universe)
+		fmt.Printf("\n  [%s]\n  pooled  %s\n  one-sided PR-level permutation p = %.3f\n",
+			label, s, s.PermutationOneSided())
+		n, p := s.PerCaseSurvival()
+		fmt.Printf("  per PR  clean %.2f surviving findings/PR (%d PRs)   buggy %.2f (%d PRs)\n",
+			n, s.NegCases, p, s.PosCases)
+		byArm := judge.SpecificityByArm(all, inc, universe)
+		for _, arm := range judge.ArmNames(byArm) {
+			a := byArm[arm]
+			an, ap := a.PerCaseSurvival()
+			ratioStr := "n/a"
+			if an > 0 {
+				ratioStr = fmt.Sprintf("%.1fx", ap/an)
+			}
+			perm, _ := a.PValues()
+			flag := ""
+			if a.NegSurvived < 5 || a.PosSurvived < 5 {
+				flag = "  NOT SIGNIFICANT (cell count < 5; do not quote the ratio)"
+			}
+			fmt.Printf("    %-12s clean %.2f/PR (%d findings)  buggy %.2f/PR (%d)  ratio %s  PR-level p=%.3f%s\n",
+				arm, an, a.NegSurvived, ap, a.PosSurvived, ratioStr, perm, flag)
+		}
+	}
 }
 
 func sortedStrings(m map[string][]string) []string {
