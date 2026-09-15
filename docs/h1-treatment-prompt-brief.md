@@ -190,13 +190,12 @@ not build #3 assuming #1's schema is fixed; build them together or sequence
    paragraph as T, word for word; differs only in the absence of the five
    lenses. Migration item #4 is ~1 day.
 
-**Still open:**
-
-3. **Should the reviewer see the §7 class list?** Giving it the enum makes the
-   `class` field consistent; it also tells the reviewer what the evaluator
-   is looking for. I lean yes — the evaluator's labels are assigned before
-   any arm runs, so nothing leaks — but it's a design choice.
-4. **Who writes the prompt text.** `engine-coder` can draft from this brief.
-   The five lenses are FRR systems knowledge; if there is a person who knows
-   the daemons better than a model does, their pass over §3 is worth more than
-   any other review of this document.
+3. **The reviewer sees the §7 class list.** The enum goes into the prompt so
+   the `class` field is consistent. The evaluator's labels are assigned
+   before any arm runs, so nothing leaks.
+4. **The lens text is written by the owner.** `engine-coder` builds the
+   prompt scaffold — structure, output contract (§5), calibration paragraph
+   (§6), the in-tree tests step (§4), the prohibitions (§7), and the stage-B
+   changes (§8) — with §3's five lenses left as a marked slot. The owner
+   fills the slot. The scaffold is what makes T and G comparable; the lenses
+   are what makes T a treatment, and they are FRR daemon knowledge.
