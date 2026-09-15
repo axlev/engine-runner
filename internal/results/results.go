@@ -62,7 +62,7 @@ func (w *Writer) WriteRun(outcome orchestrator.RunOutcome) (string, error) {
 	}
 
 	if outcome.Status == "completed" {
-		if err := writeEvaluation(runDir, stagesDir, outcome.RunID, outcome.CaseID); err != nil {
+		if err := writeEvaluation(runDir, stagesDir, outcome.RunID, outcome.CaseID, outcome.StageOrder); err != nil {
 			return "", err
 		}
 	}
@@ -274,7 +274,7 @@ type notEvaluatedDoc struct {
 	StagesAbsent  []string `json:"stages_absent"`
 }
 
-func writeEvaluation(runDir, stagesDir, runID, caseID string) error {
+func writeEvaluation(runDir, stagesDir, runID, caseID string, stageOrder []adapters.Stage) error {
 	evalDir := filepath.Join(runDir, "evaluation")
 	if err := os.MkdirAll(evalDir, 0o755); err != nil {
 		return fmt.Errorf("results: creating %s: %w", evalDir, err)
@@ -295,6 +295,29 @@ func writeEvaluation(runDir, stagesDir, runID, caseID string) error {
 		} else {
 			absent = append(absent, string(r.stage))
 		}
+	}
+	// The H1 protocols declare one stage (arm G) or two (arm T) on their
+	// own schemas, and the case-level scorer (pre-registration section 5)
+	// applies. The arm rule comes from the order the protocol DECLARED,
+	// recorded on the outcome - never from which files exist, or a T run
+	// whose stage B was skipped would be scored as G. Any disagreement
+	// between the declaration and what is present fails the seal.
+	// A one- or two-stage protocol on the pilot schemas (the fixture
+	// protocols from migration #2) is not an H1 run either; it falls
+	// through to not-evaluated.json as before.
+	if armRule := h1ArmRuleFor(stageOrder); armRule != "" && reviewSchemaVersion(reviews[0].path) == "h1-review-a/v1" {
+		reviewB := ""
+		if armRule == evaluation.ArmRuleT {
+			reviewB = reviews[1].path
+			if _, err := os.Stat(reviewB); err != nil {
+				return fmt.Errorf("results: protocol declares stage reasoner-2 but the run has no review-b.json; refusing to score a T run as G")
+			}
+		}
+		verdict, err := evaluation.ScoreCase(runID, caseID, armRule, reviews[0].path, reviewB)
+		if err != nil {
+			return fmt.Errorf("results: scoring case: %w", err)
+		}
+		return writeJSONFile(filepath.Join(evalDir, "verdict.json"), verdict)
 	}
 	if len(absent) > 0 {
 		return writeJSONFile(filepath.Join(evalDir, "not-evaluated.json"), notEvaluatedDoc{
@@ -317,6 +340,36 @@ func writeEvaluation(runDir, stagesDir, runID, caseID string) error {
 	return writeJSONFile(filepath.Join(evalDir, "findings.json"), findings)
 }
 
+// h1ArmRuleFor maps a declared stage order onto the section 5 arm rule:
+// exactly [reasoner-1] is G, exactly [reasoner-1, reasoner-2] is T, and
+// anything else (pilot-v1's three stages included) is not an H1 shape and
+// returns "".
+func h1ArmRuleFor(order []adapters.Stage) string {
+	switch {
+	case len(order) == 1 && order[0] == adapters.StageReasoner1:
+		return evaluation.ArmRuleG
+	case len(order) == 2 && order[0] == adapters.StageReasoner1 && order[1] == adapters.StageReasoner2:
+		return evaluation.ArmRuleT
+	}
+	return ""
+}
+
+// reviewSchemaVersion reads only the schema_version of a stage output;
+// an unreadable or unversioned document reads as "".
+func reviewSchemaVersion(path string) string {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var doc struct {
+		SchemaVersion string `json:"schema_version"`
+	}
+	if json.Unmarshal(raw, &doc) != nil {
+		return ""
+	}
+	return doc.SchemaVersion
+}
+
 type runResultDoc struct {
 	SchemaVersion      string                    `json:"schema_version"`
 	RunID              string                    `json:"run_id"`
@@ -327,6 +380,7 @@ type runResultDoc struct {
 	Status             string                    `json:"status"`
 	InvalidationReason string                    `json:"invalidation_reason,omitempty"`
 	Fingerprints       orchestrator.Fingerprints `json:"fingerprints"`
+	StageOrder         []string                  `json:"stage_order"`
 	Stages             []stageOutcomeDoc         `json:"stages"`
 }
 
@@ -344,6 +398,7 @@ func writeRunManifest(runDir string, outcome orchestrator.RunOutcome, stageDocs 
 		SealedAt:        formatTime(time.Now().UTC()),
 		Status:          status,
 		Fingerprints:    outcome.Fingerprints,
+		StageOrder:      stageNames(outcome.StageOrder),
 		Stages:          stageDocs,
 	}
 	if status != "completed" {
@@ -442,6 +497,14 @@ func writeChecksums(runDir string) error {
 		return fmt.Errorf("results: writing checksums.sha256: %w", err)
 	}
 	return nil
+}
+
+func stageNames(order []adapters.Stage) []string {
+	names := make([]string, 0, len(order))
+	for _, s := range order {
+		names = append(names, string(s))
+	}
+	return names
 }
 
 func writeJSONFile(path string, v interface{}) error {

@@ -55,6 +55,11 @@
     "fingerprints": {
       "$ref": "#/$defs/fingerprints"
     },
+    "stage_order": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["reasoner-1", "reasoner-2", "reasoner-3"] },
+      "description": "The stage order the protocol DECLARED, in run order. Optional because manifests sealed before it was recorded lack it; downstream scoring reads the declaration from here, never infers it from which outputs exist."
+    },
     "stages": {
       "type": "array",
       "items": {

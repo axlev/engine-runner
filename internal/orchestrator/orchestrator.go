@@ -58,6 +58,11 @@ type RunOutcome struct {
 	ReviewCPath     string
 	Fingerprints    Fingerprints
 
+	// StageOrder is the order the protocol DECLARED, recorded so a
+	// downstream reader scores the run by what it was meant to be, not by
+	// which outputs happen to exist.
+	StageOrder []adapters.Stage
+
 	// BoundaryValidation is the report from the pre-flight check on the
 	// prospective bundle. It is always present: a run that never got past
 	// validation is exactly the case where this report is the only
@@ -162,6 +167,7 @@ func (o *Orchestrator) Run(ctx context.Context, runID, caseID, bundleRoot string
 		CaseID:          caseID,
 		ProtocolVersion: o.Protocol.Version,
 		CreatedAt:       time.Now().UTC(),
+		StageOrder:      append([]adapters.Stage(nil), o.Protocol.Order()...),
 	}
 
 	// Boundary validation runs before anything else touches the bundle
