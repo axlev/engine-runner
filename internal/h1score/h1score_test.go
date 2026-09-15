@@ -177,14 +177,14 @@ func TestHitRateMatchesPathsOrDirectories(t *testing.T) {
 		"posa": {"tests/topotests/ospf_nssa_topo1/test_ospf_nssa_topo1.py"},
 		"posb": {"bgpd/bgp_evpn.c"},
 	}
-	r := armReport("T", "t", labels, T, 0, fixing, true)
+	r := armReport("T", "t", labels, T, nil, fixing, true)
 	if r.HitRate == nil || f(r.HitRate.Rate.Value) != 0.5 || r.HitRate.Rate.Denominator != 2 {
 		t.Fatalf("%+v", r.HitRate)
 	}
 	if !r.HitRate.PerCase[0].Hit || r.HitRate.PerCase[0].MatchedBy == "" || r.HitRate.PerCase[1].Hit {
 		t.Errorf("%+v", r.HitRate.PerCase)
 	}
-	r2 := armReport("T", "t", labels, T, 0, map[string][]string{}, true)
+	r2 := armReport("T", "t", labels, T, nil, map[string][]string{}, true)
 	if r2.HitRate.NoFixingPaths != 2 || r2.HitRate.Rate.Absent == "" {
 		t.Errorf("without fixing paths the rate is absent, not zero: %+v", r2.HitRate)
 	}
@@ -205,7 +205,25 @@ func TestLoadVerdictsRefusesDuplicateAndExcludesVoided(t *testing.T) {
 		t.Error("two runs of one case in one arm must fail")
 	}
 	v, voided, err := LoadVerdicts(root, arms, map[string]bool{"r2": true})
-	if err != nil || len(v["T"]) != 1 || voided["T"] != 1 {
-		t.Errorf("voided run must be excluded and counted: %v %v %v", v, voided, err)
+	if err != nil || len(v["T"]) != 1 || len(voided["T"]) != 1 || voided["T"][0] != "c1" {
+		t.Errorf("voided run must be excluded and its case listed: %v %v %v", v, voided, err)
+	}
+}
+
+// Section 8: a void is an expected, reported outcome. A labelled case whose
+// only run was voided is absent in that arm - it does not make the
+// aggregate refuse to run.
+func TestVoidedOnlyRunIsAbsentNotFatal(t *testing.T) {
+	l := cohort(1)
+	G := verdicts(map[string]bool{"nega": false})
+	r, err := Score(Options{Labels: l, ArmIDs: map[string]string{"T": "t", "G": "g"},
+		Verdicts: map[string]map[string]CaseVerdict{"T": {}, "G": G},
+		Voided:   map[string][]string{"T": {"posa"}}})
+	if err != nil {
+		t.Fatalf("a voided-only case must not be fatal: %v", err)
+	}
+	at := r.Arms["T"]
+	if at.Voided != 1 || len(at.VoidedCases) != 1 || at.VoidedCases[0] != "posa" || at.Cases != 0 {
+		t.Errorf("%+v", at)
 	}
 }

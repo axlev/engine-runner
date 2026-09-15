@@ -248,9 +248,13 @@ func LoadLabels(labelsPath, manifestPath string) (Labels, string, error) {
 // case, taking the arm from run.json's protocol_version. voided lists run
 // ids voided by the contamination scan (excluded, counted). Two non-voided
 // runs of one case in one arm is ambiguous and fails.
-func LoadVerdicts(runsRoot string, armIDs map[string]string, voided map[string]bool) (map[string]map[string]CaseVerdict, map[string]int, error) {
+//
+// The second return is the voided case ids per arm: a voided run is still
+// evidence that the case was run, so the aggregate's fail-closed check
+// counts it, while its verdict is excluded from every figure.
+func LoadVerdicts(runsRoot string, armIDs map[string]string, voided map[string]bool) (map[string]map[string]CaseVerdict, map[string][]string, error) {
 	byArm := map[string]map[string]CaseVerdict{}
-	voidCount := map[string]int{}
+	voidCases := map[string][]string{}
 	idToArm := map[string]string{}
 	for arm, id := range armIDs {
 		idToArm[id] = arm
@@ -273,7 +277,7 @@ func LoadVerdicts(runsRoot string, armIDs map[string]string, voided map[string]b
 			continue
 		}
 		if voided[run.RunID] {
-			voidCount[arm]++
+			voidCases[arm] = append(voidCases[arm], run.CaseID)
 			continue
 		}
 		var v struct {
@@ -300,7 +304,10 @@ func LoadVerdicts(runsRoot string, armIDs map[string]string, voided map[string]b
 		}
 		byArm[arm][run.CaseID] = cv
 	}
-	return byArm, voidCount, nil
+	for arm := range voidCases {
+		sort.Strings(voidCases[arm])
+	}
+	return byArm, voidCases, nil
 }
 
 // LoadVoided reads a contamscan output directory and returns the voided
@@ -438,8 +445,11 @@ func pathHit(recommended, fixing []string) (string, string, bool) {
 	return "", "", false
 }
 
-func armReport(arm, armID string, labels map[string]Label, verdicts map[string]CaseVerdict, voided int, fixing map[string][]string, withHits bool) ArmReport {
-	r := ArmReport{Arm: arm, ArmID: armID, Voided: voided, RecallByClass: map[string]Rate{}, Strata: map[string]Stratum{}, Absent: []string{}}
+func armReport(arm, armID string, labels map[string]Label, verdicts map[string]CaseVerdict, voided []string, fixing map[string][]string, withHits bool) ArmReport {
+	if voided == nil {
+		voided = []string{}
+	}
+	r := ArmReport{Arm: arm, ArmID: armID, Voided: len(voided), VoidedCases: voided, RecallByClass: map[string]Rate{}, Strata: map[string]Stratum{}, Absent: []string{}}
 	r.Counts, r.Cases = countsFor(labels, verdicts, nil)
 	r.Precision, r.Recall = precisionOf(r.Counts), recallOf(r.Counts)
 	classes := map[string]bool{}
@@ -667,14 +677,17 @@ type Options struct {
 	Inputs      map[string]string // name -> sha256 or path, recorded verbatim
 	ArmIDs      map[string]string // T -> protocol id, G -> protocol id
 	Verdicts    map[string]map[string]CaseVerdict
-	Voided      map[string]int
+	Voided      map[string][]string // arm -> voided case ids
 	History     map[string]CaseVerdict
 	FixingPaths map[string][]string
 	Threshold   float64 // pre-registered points, 15
 }
 
 // Score computes the report. It fails closed on a run whose case has no
-// label and on a label whose case has no run in any LLM arm.
+// label and on a label whose case has no run in any LLM arm. A voided run
+// counts as a run for that check: section 8 voids are an expected,
+// reported outcome, and an aggregate that refused to run because one
+// case's only run was voided would hide exactly what the void is for.
 func Score(o Options) (Report, error) {
 	labels := map[string]Label{}
 	for _, c := range o.Labels.Cases {
@@ -692,6 +705,13 @@ func Score(o Options) (Report, error) {
 		for _, vs := range o.Verdicts {
 			if _, ok := vs[id]; ok {
 				found = true
+			}
+		}
+		for _, ids := range o.Voided {
+			for _, v := range ids {
+				if v == id {
+					found = true
+				}
 			}
 		}
 		if !found {
@@ -733,7 +753,7 @@ func Score(o Options) (Report, error) {
 
 	r.Arms[ArmT] = armReport(ArmT, o.ArmIDs[ArmT], labels, o.Verdicts[ArmT], o.Voided[ArmT], o.FixingPaths, true)
 	r.Arms[ArmG] = armReport(ArmG, o.ArmIDs[ArmG], labels, o.Verdicts[ArmG], o.Voided[ArmG], o.FixingPaths, true)
-	r.Arms[ArmH] = armReport(ArmH, "history-baseline/v1", labels, o.History, 0, nil, false)
+	r.Arms[ArmH] = armReport(ArmH, "history-baseline/v1", labels, o.History, nil, nil, false)
 
 	r.Pairwise = append(r.Pairwise, pairwise("T-G", labels, o.Verdicts[ArmT], o.Verdicts[ArmG], o.Threshold))
 	r.Pairwise = append(r.Pairwise, pairwise("T-H", labels, o.Verdicts[ArmT], o.History, o.Threshold))
