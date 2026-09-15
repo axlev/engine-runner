@@ -137,7 +137,7 @@ weaken them need an explicit design decision, not a quiet refactor.
 
 - **Treat the prospective bundle wire contract as frozen in both directions.** Do not
   change the `reviewer/` + `control/` layout, the entry names, the pinned schema-version
-  strings (`engine-manifest/v1`, `reviewer-metadata/v1`), the reviewer metadata field
+  strings (`engine-manifest/v1`, `reviewer-metadata/v1` and `/v2`), the reviewer metadata field
   allowlist, or the checksum-manifest semantics unless a new product requirement cannot be
   implemented without it — not for tidiness, naming, or a nicer shape. If a requirement
   does force a change, bump the schema version rather than redefining an existing one, and

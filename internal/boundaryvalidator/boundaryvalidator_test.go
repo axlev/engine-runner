@@ -175,16 +175,103 @@ func TestRetrospectiveMetadataValueIsRejected(t *testing.T) {
 	}
 }
 
-func TestWrongMetadataSchemaVersionIsRejected(t *testing.T) {
+func TestUnknownMetadataSchemaVersionIsRejected(t *testing.T) {
 	bundle := copyBundle(t)
 	writeMetadata(t, bundle, map[string]any{
-		"schema_version":   "reviewer-metadata/v2",
+		"schema_version":   "reviewer-metadata/v3",
 		"repository":       "example/widget-service",
 		"cutoff_timestamp": "2026-01-01T00:00:00Z",
 	})
 	r := validate(t, bundle)
 	if !hasViolation(r, RulePinnedSchemas) {
 		t.Errorf("expected %s violation for an unpinned schema version, got: %s", RulePinnedSchemas, r.Summary())
+	}
+	if r.ObservedSchemaVersions["reviewer/metadata.json"] != "reviewer-metadata/v3" {
+		t.Errorf("observed version must be recorded verbatim even when rejected: %v", r.ObservedSchemaVersions)
+	}
+}
+
+// reviewer-metadata/v2 (2026-09-15): same closed key set and types as v1;
+// what changed is how the miner admits title and description, which the
+// engine records but cannot check.
+func TestMetadataV2IsAcceptedAndRecorded(t *testing.T) {
+	bundle := copyBundle(t)
+	writeMetadata(t, bundle, map[string]any{
+		"schema_version":   "reviewer-metadata/v2",
+		"repository":       "example/widget-service",
+		"title":            "Add pagination",
+		"description":      "Adds offset-based paging to the list endpoint.",
+		"cutoff_timestamp": "2026-01-01T00:00:00Z",
+		"base_branch":      "main",
+		"commit_messages":  []any{"paging: add Paginate helper"},
+	})
+	rewriteChecksum(t, bundle, "reviewer/metadata.json")
+	r := validate(t, bundle)
+	if r.Result != "pass" {
+		t.Errorf("a v2 bundle must pass: %s", r.Summary())
+	}
+	if r.ObservedSchemaVersions["reviewer/metadata.json"] != "reviewer-metadata/v2" ||
+		r.ObservedSchemaVersions["control/manifest.json"] != "engine-manifest/v1" {
+		t.Errorf("observed versions: %v", r.ObservedSchemaVersions)
+	}
+}
+
+func TestMetadataNullValueIsRejectedUnderAnyVersion(t *testing.T) {
+	for _, version := range []string{"reviewer-metadata/v1", "reviewer-metadata/v2"} {
+		bundle := copyBundle(t)
+		writeMetadata(t, bundle, map[string]any{
+			"schema_version":   version,
+			"repository":       "example/widget-service",
+			"title":            nil,
+			"cutoff_timestamp": "2026-01-01T00:00:00Z",
+		})
+		r := validate(t, bundle)
+		if !hasViolation(r, RuleMetadataFields) {
+			t.Errorf("%s: a null title must be a violation (an inadmissible field is absent, never null), got: %s", version, r.Summary())
+		}
+	}
+	bundle := copyBundle(t)
+	writeMetadata(t, bundle, map[string]any{
+		"schema_version":   "reviewer-metadata/v2",
+		"repository":       "example/widget-service",
+		"cutoff_timestamp": "2026-01-01T00:00:00Z",
+		"commit_messages":  "not an array",
+	})
+	if r := validate(t, bundle); !hasViolation(r, RuleMetadataFields) {
+		t.Errorf("commit_messages of the wrong type must be a violation: %s", r.Summary())
+	}
+}
+
+// rewriteChecksum replaces one entry in control/checksums.sha256 with the
+// digest of the file as it now is, so a test that legitimately rewrote a
+// reviewer file can still exercise a clean validation.
+func rewriteChecksum(t *testing.T, bundle, rel string) {
+	t.Helper()
+	manifest := filepath.Join(bundle, "control", "checksums.sha256")
+	raw, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(bundle, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	sum := sha256.Sum256(body)
+	var lines []string
+	replaced := false
+	for _, line := range strings.Split(strings.TrimRight(string(raw), "\n"), "\n") {
+		parts := strings.Fields(line)
+		if len(parts) == 2 && (parts[1] == rel || parts[1] == strings.TrimPrefix(rel, "reviewer/")) {
+			line = hex.EncodeToString(sum[:]) + "  " + parts[1]
+			replaced = true
+		}
+		lines = append(lines, line)
+	}
+	if !replaced {
+		t.Fatalf("setup: %s not listed in checksums manifest", rel)
+	}
+	if err := os.WriteFile(manifest, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
 	}
 }
 

@@ -110,7 +110,7 @@ Optional. When present, a JSON object carrying **only** these fields:
 
 | Field | Notes |
 |---|---|
-| `schema_version` | Required, must be exactly `reviewer-metadata/v1` |
+| `schema_version` | Required, `reviewer-metadata/v1` or `reviewer-metadata/v2` (accepted since 2026-09-15). v2 changes only how the miner admits `title`/`description` — from each field's own edit history, last edit at or before the cutoff — recorded on the miner's evaluator audit; the wire shape is identical. The engine records the version verbatim in `run.json` (`fingerprints.bundle_schema_versions`) and in `boundary-validation.json`, never normalised. Any other string fails `pinned_schema_versions`. |
 | `repository` | `owner/name` |
 | `title` | Only if provable as of cutoff |
 | `description` | Only if provable as of cutoff |

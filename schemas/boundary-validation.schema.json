@@ -25,6 +25,11 @@
       "description": "Every violation found, across all checks. Empty or absent when result is \"pass\".",
       "items": { "$ref": "#/$defs/violation" }
     },
+    "observed_schema_versions": {
+      "type": "object",
+      "description": "The schema_version each pinned bundle document carried, verbatim, accepted or not (reviewer/metadata.json, control/manifest.json).",
+      "additionalProperties": { "type": "string" }
+    },
     "waivers": {
       "type": "array",
       "description": "Violations knowingly overridden by protocol configuration. Recorded rather than silently dropped, so a run's own artifacts distinguish \"this cohort knowingly allowed oracle_dialect.go\" from \"someone turned the check off\". Only oracle_shaped_content is waivable; structural rules are not.",

@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,6 +25,12 @@ type Fingerprints struct {
 	AdapterVersions   map[string]string `json:"adapter_versions"`
 	ContainerDigests  map[string]string `json:"container_digests,omitempty"`
 	InputChecksums    map[string]string `json:"input_checksums"`
+
+	// BundleSchemaVersions records, verbatim, the schema_version each of
+	// the bundle's pinned documents carried (reviewer/metadata.json,
+	// control/manifest.json). Not normalised: a cohort mixing
+	// reviewer-metadata/v1 and /v2 bundles must be visible as such here.
+	BundleSchemaVersions map[string]string `json:"bundle_schema_versions,omitempty"`
 
 	// ToolSets records the RESOLVED tool grant per stage. The arm config
 	// hash already covers a `tools:` key that is present, but not a
@@ -124,6 +131,20 @@ func computeStaticFingerprints(protocolPath, agentSetPath, repoRoot, bundleRoot 
 	// an error - that lets a run rejected by boundary validation still
 	// record which protocol and prompts were in play, instead of failing
 	// here with a less useful diagnosis than the one the validator gives.
+	fp.BundleSchemaVersions = map[string]string{}
+	for _, rel := range []string{"reviewer/metadata.json", "control/manifest.json"} {
+		raw, err := os.ReadFile(filepath.Join(bundleRoot, filepath.FromSlash(rel)))
+		if err != nil {
+			continue // metadata.json is optional; the validator reports a missing manifest
+		}
+		var doc struct {
+			SchemaVersion string `json:"schema_version"`
+		}
+		if json.Unmarshal(raw, &doc) == nil && doc.SchemaVersion != "" {
+			fp.BundleSchemaVersions[rel] = doc.SchemaVersion
+		}
+	}
+
 	checksumsPath := filepath.Join(bundleRoot, "control", "checksums.sha256")
 	data, err := os.ReadFile(checksumsPath)
 	if err != nil {

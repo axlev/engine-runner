@@ -75,6 +75,10 @@ type Report struct {
 	Checks        []Check     `json:"checks"`
 	Violations    []Violation `json:"violations,omitempty"`
 
+	// ObservedSchemaVersions records the schema_version each pinned
+	// document actually carried, verbatim, whether or not it was accepted.
+	ObservedSchemaVersions map[string]string `json:"observed_schema_versions,omitempty"`
+
 	// Waivers records violations that were knowingly overridden by
 	// protocol configuration. They are reported, never silently dropped:
 	// the difference between "this cohort knowingly allowed
@@ -245,10 +249,33 @@ var forbiddenMetadataValueSubstrings = []string{
 	"root cause was",
 }
 
-const (
-	pinnedReviewerMetadataSchema = "reviewer-metadata/v1"
-	pinnedControlManifestSchema  = "engine-manifest/v1"
-)
+const pinnedControlManifestSchema = "engine-manifest/v1"
+
+// acceptedReviewerMetadataSchemas are the metadata schema versions the
+// engine admits. v2 (2026-09-15) differs from v1 only in how the MINER
+// admits title and description - from each field's own edit history, last
+// edit at or before the cutoff - which is recorded on the miner's evaluator
+// audit, not something this validator can check. The wire shape is
+// identical: same closed key set, same types, an inadmissible field absent
+// rather than null. The engine's job is to accept the string and record it
+// verbatim, so a cohort mixing v1 and v2 bundles is visible as such.
+var acceptedReviewerMetadataSchemas = map[string]bool{
+	"reviewer-metadata/v1": true,
+	"reviewer-metadata/v2": true,
+}
+
+// metadataFieldTypes is the contract's type per field. A value of another
+// type - null included - is a violation: the miner omits what it cannot
+// admit, so a null is a field that should not be there at all.
+var metadataFieldTypes = map[string]string{
+	"schema_version":   "string",
+	"repository":       "string",
+	"title":            "string",
+	"description":      "string",
+	"cutoff_timestamp": "string",
+	"base_branch":      "string",
+	"commit_messages":  "array of strings",
+}
 
 // Validate checks the prospective bundle rooted at bundleRoot (the
 // directory containing reviewer/ and control/) and returns a report. An
@@ -293,9 +320,15 @@ func ValidateWithConfig(caseID, bundleRoot string, cfg Config) (Report, error) {
 		checkReviewerTree(reviewerRoot, add)
 	}
 
-	checkMetadata(filepath.Join(reviewerRoot, "metadata.json"), add)
+	observed := map[string]string{}
+	if v, present := checkMetadata(filepath.Join(reviewerRoot, "metadata.json"), add); present {
+		observed["reviewer/metadata.json"] = v
+	}
 	checkChecksums(bundleRoot, reviewerRoot, add)
-	checkControlManifest(filepath.Join(bundleRoot, "control", "manifest.json"), add)
+	if v, present := checkControlManifest(filepath.Join(bundleRoot, "control", "manifest.json"), add); present {
+		observed["control/manifest.json"] = v
+	}
+	report.ObservedSchemaVersions = observed
 
 	// Assemble in fixed rule order, with violations sorted within each rule,
 	// so the report is reproducible.
@@ -515,20 +548,22 @@ func checkOracleShapedPath(rel, basename string, add func(rule, path, detail str
 	}
 }
 
-func checkMetadata(metadataPath string, add func(rule, path, detail string)) {
+// checkMetadata returns the schema_version the file carried and whether
+// the file was present at all.
+func checkMetadata(metadataPath string, add func(rule, path, detail string)) (string, bool) {
 	raw, err := os.ReadFile(metadataPath)
 	if err != nil {
 		// metadata.json is optional per section 7 ("if a field cannot be
 		// reconstructed, the miner omits it" - and a bundle may legitimately
 		// carry no reviewer-visible metadata at all).
-		return
+		return "", false
 	}
 	rel := "reviewer/metadata.json"
 
 	var fields map[string]any
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		add(RulePinnedSchemas, rel, fmt.Sprintf("is not valid JSON: %v", err))
-		return
+		return "", true
 	}
 
 	names := make([]string, 0, len(fields))
@@ -540,7 +575,12 @@ func checkMetadata(metadataPath string, add func(rule, path, detail string)) {
 	for _, name := range names {
 		if !allowedMetadataFields[name] {
 			add(RuleMetadataFields, rel,
-				fmt.Sprintf("field %q is not reviewer-visible metadata; only schema_version, repository, title, description and cutoff_timestamp are permitted", name))
+				fmt.Sprintf("field %q is not reviewer-visible metadata; only schema_version, repository, title, description, cutoff_timestamp, base_branch and commit_messages are permitted", name))
+			continue
+		}
+		if !hasMetadataType(fields[name], metadataFieldTypes[name]) {
+			add(RuleMetadataFields, rel,
+				fmt.Sprintf("field %q is not a %s; an inadmissible field is absent, never null or another type", name, metadataFieldTypes[name]))
 			continue
 		}
 		value, ok := fields[name].(string)
@@ -565,10 +605,40 @@ func checkMetadata(metadataPath string, add func(rule, path, detail string)) {
 	}
 
 	version, _ := fields["schema_version"].(string)
-	if version != pinnedReviewerMetadataSchema {
+	if !acceptedReviewerMetadataSchemas[version] {
 		add(RulePinnedSchemas, rel,
-			fmt.Sprintf("schema_version is %q, want the pinned %q", version, pinnedReviewerMetadataSchema))
+			fmt.Sprintf("schema_version is %q, want one of the pinned %v", version, acceptedReviewerMetadataSchemaList()))
 	}
+	return version, true
+}
+
+func acceptedReviewerMetadataSchemaList() []string {
+	out := make([]string, 0, len(acceptedReviewerMetadataSchemas))
+	for v := range acceptedReviewerMetadataSchemas {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func hasMetadataType(v any, want string) bool {
+	switch want {
+	case "string":
+		_, ok := v.(string)
+		return ok
+	case "array of strings":
+		items, ok := v.([]any)
+		if !ok {
+			return false
+		}
+		for _, it := range items {
+			if _, ok := it.(string); !ok {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // checkChecksums recomputes every digest in control/checksums.sha256 and
@@ -643,20 +713,21 @@ func checkChecksums(bundleRoot, reviewerRoot string, add func(rule, path, detail
 	}
 }
 
-func checkControlManifest(manifestPath string, add func(rule, path, detail string)) {
+func checkControlManifest(manifestPath string, add func(rule, path, detail string)) (string, bool) {
 	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
 		add(RulePinnedSchemas, "control/manifest.json", fmt.Sprintf("cannot read control manifest: %v", err))
-		return
+		return "", false
 	}
 	var manifest map[string]any
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		add(RulePinnedSchemas, "control/manifest.json", fmt.Sprintf("is not valid JSON: %v", err))
-		return
+		return "", true
 	}
 	version, _ := manifest["schema_version"].(string)
 	if version != pinnedControlManifestSchema {
 		add(RulePinnedSchemas, "control/manifest.json",
 			fmt.Sprintf("schema_version is %q, want the pinned %q", version, pinnedControlManifestSchema))
 	}
+	return version, true
 }

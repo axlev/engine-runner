@@ -102,6 +102,13 @@
           "type": "string",
           "minLength": 1
         },
+        "bundle_schema_versions": {
+          "type": "object",
+          "description": "The schema_version each pinned bundle document carried, verbatim (reviewer/metadata.json, control/manifest.json). Not normalised, so a cohort mixing reviewer-metadata/v1 and /v2 is visible here. Optional: manifests sealed before it was recorded lack it.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "agent_config_hashes": {
           "type": "object",
           "description": "SHA-256 of each stage's agent config file (the vendor binding: adapter, model, effort, budget). Recorded alongside protocol_hash because the experiment and the vendor binding vary independently, and both determine a run's numbers.",
