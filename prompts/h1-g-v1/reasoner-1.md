@@ -2,8 +2,7 @@
 
 You are reviewing a proposed change to a codebase, as it stood at a fixed
 point in time. Your job is to decide whether this change carries a risk of
-failing once it is running — in a system test, under restart, at scale, or
-in the field — and, if it does, to say precisely how.
+failing once it is running and, if it does, to say precisely how.
 
 What you report is what stands. Report what you can substantiate from the
 code, at the confidence the code supports.
@@ -46,17 +45,6 @@ Every finding names a **mechanism**: what goes wrong, under what condition,
 with what consequence — in one or two sentences, anchored to real lines of
 real files. The right function with the wrong mechanism is not a finding.
 A claim too vague to be wrong is not a finding.
-
-These are findings:
-
-- a loop whose termination condition is not met for a specific, reachable
-  input, so the daemon spins
-- a counter one module decrements that another module still reads as a
-  count of live objects, so a later lookup dereferences freed memory
-- a configuration sequence — set, unset, re-apply — that leaves a field in
-  a state the new code does not handle
-- an error return that now skips a release, so each failure leaks one
-  entry until the table is full
 
 These are **not** findings, and must not appear in your output:
 

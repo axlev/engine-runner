@@ -65,6 +65,34 @@ func checkH1DiscoveryPrompt(t *testing.T, rel string) {
 		}
 	}
 
+	// Pre-registration s4: G has no domain content, and T's domain content
+	// is the lens slot alone. A positive example of a finding is a hint
+	// toward a class - the first draft's four examples paraphrased the
+	// brief's pilot evidence for lenses 1-4 - so the finding definition
+	// may carry only the negative list. Enforced on both arms: T's
+	// direction lives in its slot, not here.
+	if strings.Contains(p, "These are findings") {
+		t.Errorf("%s: carries positive finding examples; the finding definition may only say what is NOT a finding", rel)
+	}
+	sec := p[strings.Index(p, "## What counts as a finding"):]
+	sec = sec[:strings.Index(sec, "\n## ")]
+	allowedBullets := map[string]bool{
+		`- "consider adding error handling" with no path that fails`:         true,
+		`- any style, naming, or readability preference`:                     true,
+		`- "add tests for this" as a standalone item`:                        true,
+		`- "this might have performance implications" with no specific cost`: true,
+		`- restating what the diff does`:                                     true,
+	}
+	for _, line := range strings.Split(sec, "\n") {
+		if strings.HasPrefix(line, "- ") && !allowedBullets[line] {
+			t.Errorf("%s: bullet under What counts as a finding is not in the negative list: %q", rel, line)
+		}
+	}
+	// Brief s3 lens 5 in four words does not belong in the shared text.
+	if strings.Contains(strings.ToLower(p[:strings.Index(p, "## What you can read")]), "restart") {
+		t.Errorf("%s: preamble names restart, which is lens 5", rel)
+	}
+
 	// Brief s2: the recall instruction is the confound G exists to remove.
 	if regexp.MustCompile(`(?i)favou?r recall`).MatchString(p) {
 		t.Errorf("%s: instructs the reviewer to favour recall", rel)
