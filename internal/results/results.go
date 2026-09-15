@@ -111,9 +111,9 @@ type stageOutcomeDoc struct {
 	// DurationMS - VendorDurationMS is engine overhead: container start,
 	// mounting, and the per-attempt copy of the source snapshot. With a
 	// 7,600-file tree that overhead is the number worth watching.
-	DurationMS          int            `json:"duration_ms"`
-	VendorDurationMS    int            `json:"vendor_duration_ms,omitempty"`
-	VendorAPIDurationMS int            `json:"vendor_api_duration_ms,omitempty"`
+	DurationMS          int `json:"duration_ms"`
+	VendorDurationMS    int `json:"vendor_duration_ms,omitempty"`
+	VendorAPIDurationMS int `json:"vendor_api_duration_ms,omitempty"`
 
 	// Usage is summed across every attempt, matching DurationMS above. It
 	// previously carried the winning attempt's usage alone while the
@@ -260,19 +260,56 @@ func reviewFileName(stage adapters.Stage) string {
 	}
 }
 
+// notEvaluatedDoc is written in place of scores when the run did not
+// produce all three review outputs the deterministic evaluator needs. It is
+// a statement, not a score: a one-stage protocol has nothing for a
+// disposition-delta evaluator to compare, and writing zeros would let an
+// unscored run be read as a scored one.
+type notEvaluatedDoc struct {
+	SchemaVersion string   `json:"schema_version"`
+	RunID         string   `json:"run_id"`
+	CaseID        string   `json:"case_id"`
+	Reason        string   `json:"reason"`
+	StagesPresent []string `json:"stages_present"`
+	StagesAbsent  []string `json:"stages_absent"`
+}
+
 func writeEvaluation(runDir, stagesDir, runID, caseID string) error {
-	scores, findings, err := evaluation.Evaluate(
-		runID, caseID,
-		filepath.Join(stagesDir, "reasoner-1", "review-a.json"),
-		filepath.Join(stagesDir, "reasoner-2", "review-b.json"),
-		filepath.Join(stagesDir, "reasoner-3", "review-c.json"),
-	)
-	if err != nil {
-		return fmt.Errorf("results: evaluating: %w", err)
-	}
 	evalDir := filepath.Join(runDir, "evaluation")
 	if err := os.MkdirAll(evalDir, 0o755); err != nil {
 		return fmt.Errorf("results: creating %s: %w", evalDir, err)
+	}
+
+	reviews := []struct {
+		stage adapters.Stage
+		path  string
+	}{
+		{adapters.StageReasoner1, filepath.Join(stagesDir, "reasoner-1", "review-a.json")},
+		{adapters.StageReasoner2, filepath.Join(stagesDir, "reasoner-2", "review-b.json")},
+		{adapters.StageReasoner3, filepath.Join(stagesDir, "reasoner-3", "review-c.json")},
+	}
+	var present, absent []string
+	for _, r := range reviews {
+		if _, err := os.Stat(r.path); err == nil {
+			present = append(present, string(r.stage))
+		} else {
+			absent = append(absent, string(r.stage))
+		}
+	}
+	if len(absent) > 0 {
+		return writeJSONFile(filepath.Join(evalDir, "not-evaluated.json"), notEvaluatedDoc{
+			SchemaVersion: "not-evaluated/v1",
+			RunID:         runID,
+			CaseID:        caseID,
+			Reason:        "the deterministic evaluator scores stage-2 and stage-3 dispositions against stage-1 findings and needs all three review outputs; this protocol did not run every stage. Case-level scoring for shorter protocols is a separate evaluator.",
+			StagesPresent: present,
+			StagesAbsent:  absent,
+		})
+	}
+
+	scores, findings, err := evaluation.Evaluate(runID, caseID, reviews[0].path, reviews[1].path, reviews[2].path)
+	if err != nil {
+		return fmt.Errorf("results: evaluating: %w", err)
 	}
 	if err := writeJSONFile(filepath.Join(evalDir, "scores.json"), scores); err != nil {
 		return err

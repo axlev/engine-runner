@@ -65,9 +65,7 @@ type RunOutcome struct {
 	BoundaryValidation *boundaryvalidator.Report
 }
 
-var stageOrder = []adapters.Stage{adapters.StageReasoner1, adapters.StageReasoner2, adapters.StageReasoner3}
-
-// Orchestrator sequences stageOrder under one loaded Protocol.
+// Orchestrator sequences Protocol.Order() under one loaded Protocol.
 type Orchestrator struct {
 	// RepoRoot resolves the protocol's repo-relative paths: stage prompts
 	// (e.g. "prompts/pilot-v1/reasoner-1.md") and output schemas (e.g.
@@ -135,7 +133,7 @@ func New(opts Options) (*Orchestrator, error) {
 	// Fail here rather than mid-run: a stage whose adapter was never
 	// constructed would otherwise blow up after earlier stages had already
 	// spent money.
-	for _, stage := range stageOrder {
+	for _, stage := range opts.Protocol.Order() {
 		name := opts.AgentSet[stage].Adapter
 		if _, ok := opts.Adapters[name]; !ok {
 			return nil, fmt.Errorf("orchestrator: stage %s needs adapter %q, which was not supplied", stage, name)
@@ -196,25 +194,17 @@ func (o *Orchestrator) Run(ctx context.Context, runID, caseID, bundleRoot string
 		return outcome, fmt.Errorf("orchestrator: computing fingerprints: %w", fpErr)
 	}
 
-	var reviewAPath, reviewBPath string
-	policy := contextbuilder.HandoffPolicy{EnableAToB: o.Protocol.Handoffs.EnableAToB}
+	// Every completed stage's output, keyed by stage. What a later stage may
+	// SEE of this is decided by the protocol's declared grants, never by
+	// what happens to be in the map.
+	outputs := map[adapters.Stage]string{}
 
-	for _, stage := range stageOrder {
+	for _, stage := range o.Protocol.Order() {
 		stageProto := o.Protocol.Stages[string(stage)]
 		promptPath := filepath.Join(o.RepoRoot, stageProto.Prompt)
 
-		var inputs contextbuilder.StageInputs
-		switch stage {
-		case adapters.StageReasoner2:
-			if policy.EnableAToB {
-				inputs.ReviewAPath = reviewAPath
-			}
-		case adapters.StageReasoner3:
-			if policy.EnableAToB {
-				inputs.ReviewAPath = reviewAPath
-			}
-			inputs.ReviewBPath = reviewBPath
-		}
+		policy := contextbuilder.HandoffPolicy{Grants: o.Protocol.HandoffsFor(stage)}
+		inputs := contextbuilder.StageInputs{Outputs: outputs}
 
 		outputPath, records, err := o.runStageWithRetries(ctx, runID, caseID, stage, stageProto, promptPath, bundleRoot, policy, inputs)
 		outcome.Attempts = append(outcome.Attempts, records...)
@@ -234,12 +224,15 @@ func (o *Orchestrator) Run(ctx context.Context, runID, caseID, bundleRoot string
 			return outcome, fmt.Errorf("orchestrator: %w", err)
 		}
 
+		outputs[stage] = outputPath
+		// The A/B/C fields name outputs by stage identity for the results
+		// writer and evaluator, which still speak that vocabulary. A
+		// protocol that does not run a stage leaves its field empty, and
+		// the results writer says so rather than evaluating around it.
 		switch stage {
 		case adapters.StageReasoner1:
-			reviewAPath = outputPath
 			outcome.ReviewAPath = outputPath
 		case adapters.StageReasoner2:
-			reviewBPath = outputPath
 			outcome.ReviewBPath = outputPath
 		case adapters.StageReasoner3:
 			outcome.ReviewCPath = outputPath

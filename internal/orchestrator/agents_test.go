@@ -23,7 +23,7 @@ func TestLoadFixtureAgentSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadAgentSet: %v", err)
 	}
-	for _, stage := range stageOrder {
+	for _, stage := range knownStages {
 		cfg := set[stage]
 		if cfg.Adapter != "fixture" {
 			t.Errorf("%s: Adapter = %q, want fixture", stage, cfg.Adapter)
@@ -53,7 +53,7 @@ func TestLoadRealAgentSet(t *testing.T) {
 			// Every stage must inherit the arm's model and carry a spending
 			// ceiling: an arm that silently left one unbounded would only
 			// show up as an unexpected bill.
-			for _, stage := range stageOrder {
+			for _, stage := range knownStages {
 				if set[stage].Model == "" {
 					t.Errorf("%s: model did not reach the stage", stage)
 				}
@@ -84,7 +84,7 @@ stages:
 	if err != nil {
 		t.Fatalf("LoadAgentSet: %v", err)
 	}
-	for _, stage := range stageOrder {
+	for _, stage := range knownStages {
 		cfg := set[stage]
 		if cfg.Model != "shared-model" || cfg.ReasoningLevel != "high" || cfg.Budget.MaxCostUSD != 1.5 {
 			t.Errorf("%s did not inherit the arm defaults: %+v", stage, cfg)

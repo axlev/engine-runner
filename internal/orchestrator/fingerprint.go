@@ -66,7 +66,7 @@ func computeStaticFingerprints(protocolPath, agentSetPath, repoRoot, bundleRoot 
 		ToolSets:          map[string][]string{},
 	}
 
-	for _, stage := range stageOrder {
+	for _, stage := range protocol.Order() {
 		if tools := agents[stage].Tools; len(tools) > 0 {
 			fp.ToolSets[string(stage)] = append([]string(nil), tools...)
 		}
@@ -96,11 +96,11 @@ func computeStaticFingerprints(protocolPath, agentSetPath, repoRoot, bundleRoot 
 	if err != nil {
 		return Fingerprints{}, err
 	}
-	for _, stage := range stageOrder {
+	for _, stage := range protocol.Order() {
 		fp.AgentConfigHashes[string(stage)] = agentHash
 	}
 
-	for _, stage := range stageOrder {
+	for _, stage := range protocol.Order() {
 		sp := protocol.Stages[string(stage)]
 
 		promptHash, err := sha256HexFile(filepath.Join(repoRoot, sp.Prompt))

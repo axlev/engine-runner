@@ -1,0 +1,30 @@
+{
+  "name": "two-stage",
+  "description": "Discovery then evidence with the A->B handoff, for a two-stage fixture protocol. Reuses happy-path's first two responses; defines no reasoner-3 behaviour so an unexpected third call fails loudly.",
+  "stages": {
+    "reasoner-1": {
+      "usage": {
+        "input_tokens": 8200,
+        "output_tokens": 950,
+        "tool_calls": 4,
+        "cost_usd": 0.041
+      },
+      "default": {
+        "kind": "success",
+        "response_path": "responses/happy-path/reasoner-1.json"
+      }
+    },
+    "reasoner-2": {
+      "usage": {
+        "input_tokens": 9100,
+        "output_tokens": 1100,
+        "tool_calls": 6,
+        "cost_usd": 0.052
+      },
+      "default": {
+        "kind": "success",
+        "response_path": "responses/happy-path/reasoner-2.json"
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+# Fixture protocol: ONE stage, discovery only. The shape of a generic
+# single-pass baseline arm. Exists so the engine's ability to run a protocol
+# that is not three stages is tested on the fixture adapter, not discovered
+# on a paid run.
+#
+# Deliberately explicit: stage_order is declared, and no stage declares
+# receives, so reasoner-1 sees the prospective bundle only.
+protocol_version: fixture-single-stage-v1
+
+stage_order: [reasoner-1]
+
+retry_policy:
+  max_attempts: 1
+
+stages:
+  reasoner-1:
+    prompt: fixtures/prompts/placeholder.md
+    output_schema: schemas/review-a.schema.json

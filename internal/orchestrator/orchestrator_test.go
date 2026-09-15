@@ -229,14 +229,17 @@ func TestOrchestratorFailsFastAndStopsAfterExhaustingRetries(t *testing.T) {
 }
 
 func TestOrchestratorReasoner2NeverSeesReviewAWhenHandoffDisabled(t *testing.T) {
-	protocol := loadPilotV1(t)
-	disabled := *protocol
-	disabled.Handoffs = HandoffConfig{EnableAToB: false}
+	// Grants resolve at LOAD, so the switch must be flipped in the file
+	// and re-loaded - mutating a loaded Protocol's Handoffs changes nothing,
+	// which is the point: nothing downstream re-derives a handoff.
+	src, err := os.ReadFile(pilotV1Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabledPath := writeProtocol(t, strings.Replace(string(src), "enable_a_to_b: true", "enable_a_to_b: false", 1))
 
 	adapter := newFixtureAdapter(t)
-	work := t.TempDir()
-
-	o := newOrch(t, &disabled, adapter, work)
+	o := newOrchFor(t, disabledPath, adapter)
 
 	outcome, err := o.Run(context.Background(), "run-no-handoff", "happy-path", happyPathBundle)
 	if err != nil {
@@ -252,6 +255,14 @@ func TestOrchestratorReasoner2NeverSeesReviewAWhenHandoffDisabled(t *testing.T) 
 		}
 		if _, err := os.Stat(filepath.Join(rec.Request.WorkspacePath, "input", "handoff", "review-a.json")); !os.IsNotExist(err) {
 			t.Errorf("%s workspace must not contain review-a.json when EnableAToB is false, got err=%v", rec.Stage, err)
+		}
+	}
+	// reasoner-3 still receives review-b: disabling A->B never removes B->C.
+	for _, rec := range outcome.Attempts {
+		if rec.Stage == adapters.StageReasoner3 {
+			if _, err := os.Stat(filepath.Join(rec.Request.WorkspacePath, "input", "handoff", "review-b.json")); err != nil {
+				t.Errorf("reasoner-3 must still receive review-b.json: %v", err)
+			}
 		}
 	}
 }

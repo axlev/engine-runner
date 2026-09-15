@@ -76,39 +76,34 @@ func TestReasoner1SeesOnlyProspectiveNoHandoff(t *testing.T) {
 	}
 }
 
-func TestReasoner2HandoffDisabledIgnoresAvailableReviewA(t *testing.T) {
-	work := t.TempDir()
+// A prior output that exists on disk is NOT copied unless a grant names it.
+// The policy is the sole authority; the inputs map only says where bytes
+// live.
+func TestNoGrantIgnoresAvailableReviewA(t *testing.T) {
 	b := New()
-	// ReviewAPath is supplied, but the policy does not authorize it -
-	// policy must win over mere availability.
-	_, err := b.Prepare(adapters.StageReasoner2, bundleRoot, promptPath, work, HandoffPolicy{EnableAToB: false}, StageInputs{ReviewAPath: reviewAOut})
+	work := t.TempDir()
+	_, err := b.Prepare(adapters.StageReasoner2, bundleRoot, promptPath, work, HandoffPolicy{},
+		StageInputs{Outputs: map[adapters.Stage]string{adapters.StageReasoner1: reviewAOut}})
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(work, "input", "handoff", "review-a.json")); !os.IsNotExist(err) {
-		t.Fatalf("review-a.json must not be copied when EnableAToB is false, got err=%v", err)
+		t.Fatalf("review-a.json must not be copied without a grant, got err=%v", err)
 	}
-	assertNoControlLeakage(t, work)
 }
 
-func TestReasoner2HandoffEnabledCopiesReviewA(t *testing.T) {
-	work := t.TempDir()
+func TestGrantCopiesReviewAUnderTheDeclaredName(t *testing.T) {
 	b := New()
-	ctx, err := b.Prepare(adapters.StageReasoner2, bundleRoot, promptPath, work, HandoffPolicy{EnableAToB: true}, StageInputs{ReviewAPath: reviewAOut})
+	work := t.TempDir()
+	ctx, err := b.Prepare(adapters.StageReasoner2, bundleRoot, promptPath, work,
+		HandoffPolicy{Grants: []HandoffGrant{{From: adapters.StageReasoner1, As: "review-a.json"}}},
+		StageInputs{Outputs: map[adapters.Stage]string{adapters.StageReasoner1: reviewAOut}})
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
 	dst := filepath.Join(work, "input", "handoff", "review-a.json")
-	got, err := os.ReadFile(dst)
-	if err != nil {
-		t.Fatalf("reading copied handoff file: %v", err)
-	}
-	want, err := os.ReadFile(reviewAOut)
-	if err != nil {
-		t.Fatalf("reading source review-a.json: %v", err)
-	}
-	if string(got) != string(want) {
-		t.Errorf("copied review-a.json does not match source byte-for-byte")
+	if _, err := os.Stat(dst); err != nil {
+		t.Fatalf("expected review-a.json to be copied: %v", err)
 	}
 	found := false
 	for _, f := range ctx.InputFiles {
@@ -117,58 +112,78 @@ func TestReasoner2HandoffEnabledCopiesReviewA(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("InputFiles = %v, expected it to list the review-a handoff", ctx.InputFiles)
-	}
-}
-
-func TestReasoner2HandoffEnabledButMissingReviewAIsError(t *testing.T) {
-	work := t.TempDir()
-	b := New()
-	_, err := b.Prepare(adapters.StageReasoner2, bundleRoot, promptPath, work, HandoffPolicy{EnableAToB: true}, StageInputs{})
-	if err == nil {
-		t.Fatalf("expected an error when the A-to-B handoff is enabled but no review-a output was supplied")
-	}
-}
-
-func TestReasoner3AlwaysGetsReviewBNeverReviewAWithoutPolicy(t *testing.T) {
-	work := t.TempDir()
-	b := New()
-	_, err := b.Prepare(adapters.StageReasoner3, bundleRoot, promptPath, work, HandoffPolicy{EnableAToB: false}, StageInputs{ReviewBPath: reviewBOut})
-	if err != nil {
-		t.Fatalf("Prepare: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(work, "input", "handoff", "review-b.json")); err != nil {
-		t.Errorf("expected review-b.json to be present: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(work, "input", "handoff", "review-a.json")); !os.IsNotExist(err) {
-		t.Errorf("review-a.json must not appear when EnableAToB is false, got err=%v", err)
+		t.Errorf("InputFiles = %v, want it to list the handoff", ctx.InputFiles)
 	}
 	assertNoControlLeakage(t, work)
 }
 
-func TestReasoner3WithAToBEnabledGetsBothHandoffs(t *testing.T) {
-	work := t.TempDir()
+// The name a handoff appears under is the grant's business, not the
+// source stage's. A two-stage protocol may call reasoner-1's output
+// whatever its reasoner-2 prompt expects.
+func TestGrantHonoursTheDeclaredFileName(t *testing.T) {
 	b := New()
-	_, err := b.Prepare(adapters.StageReasoner3, bundleRoot, promptPath, work, HandoffPolicy{EnableAToB: true}, StageInputs{
-		ReviewAPath: reviewAOut,
-		ReviewBPath: reviewBOut,
-	})
+	work := t.TempDir()
+	_, err := b.Prepare(adapters.StageReasoner2, bundleRoot, promptPath, work,
+		HandoffPolicy{Grants: []HandoffGrant{{From: adapters.StageReasoner1, As: "prior-review.json"}}},
+		StageInputs{Outputs: map[adapters.Stage]string{adapters.StageReasoner1: reviewAOut}})
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(work, "input", "handoff", "prior-review.json")); err != nil {
+		t.Fatalf("expected the handoff under its declared name: %v", err)
+	}
+}
+
+// A grant whose source produced nothing is an error, never a silent gap:
+// the receiving prompt would otherwise run believing it had seen a review.
+func TestGrantWithNoOutputIsError(t *testing.T) {
+	b := New()
+	work := t.TempDir()
+	_, err := b.Prepare(adapters.StageReasoner2, bundleRoot, promptPath, work,
+		HandoffPolicy{Grants: []HandoffGrant{{From: adapters.StageReasoner1, As: "review-a.json"}}},
+		StageInputs{})
+	if err == nil {
+		t.Fatalf("expected an error when a granted handoff has no output")
+	}
+}
+
+// Pilot-v1's reasoner-3 shape, expressed as grants: review-b always,
+// review-a only when granted. Nothing about stage identity decides this any
+// more - the grants do.
+func TestTwoGrantsCopyBoth(t *testing.T) {
+	b := New()
+	work := t.TempDir()
+	_, err := b.Prepare(adapters.StageReasoner3, bundleRoot, promptPath, work,
+		HandoffPolicy{Grants: []HandoffGrant{
+			{From: adapters.StageReasoner1, As: "review-a.json"},
+			{From: adapters.StageReasoner2, As: "review-b.json"},
+		}},
+		StageInputs{Outputs: map[adapters.Stage]string{
+			adapters.StageReasoner1: reviewAOut,
+			adapters.StageReasoner2: reviewBOut,
+		}})
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
 	for _, name := range []string{"review-a.json", "review-b.json"} {
 		if _, err := os.Stat(filepath.Join(work, "input", "handoff", name)); err != nil {
-			t.Errorf("expected %s to be present: %v", name, err)
+			t.Errorf("expected %s: %v", name, err)
 		}
 	}
 }
 
-func TestReasoner3MissingReviewBIsError(t *testing.T) {
-	work := t.TempDir()
+// The handoff directory is the only place a handoff may land. A grant name
+// with a path component is refused here even though the loader already
+// refuses it - this package must not trust its caller on that.
+func TestGrantNameMustBeBare(t *testing.T) {
 	b := New()
-	_, err := b.Prepare(adapters.StageReasoner3, bundleRoot, promptPath, work, HandoffPolicy{}, StageInputs{})
-	if err == nil {
-		t.Fatalf("expected an error: reasoner-3 always requires review-b, regardless of policy")
+	for _, bad := range []string{"", "../escape.json", "sub/review.json", "/abs.json"} {
+		_, err := b.Prepare(adapters.StageReasoner2, bundleRoot, promptPath, t.TempDir(),
+			HandoffPolicy{Grants: []HandoffGrant{{From: adapters.StageReasoner1, As: bad}}},
+			StageInputs{Outputs: map[adapters.Stage]string{adapters.StageReasoner1: reviewAOut}})
+		if err == nil {
+			t.Errorf("grant name %q must be refused", bad)
+		}
 	}
 }
 

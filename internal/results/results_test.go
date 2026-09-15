@@ -554,3 +554,71 @@ func TestStageDurationIgnoresUnusableTimestamps(t *testing.T) {
 		t.Errorf("totalDurationMS = %d, want 2000 — only the one usable pair counts", got)
 	}
 }
+
+// A protocol that does not run every stage produces a completed run the
+// deterministic evaluator cannot score. The writer must say so rather than
+// evaluate around the gap or write zeros that read as a score.
+func TestWriteRunOneStageProtocolWritesNotEvaluatedInsteadOfScores(t *testing.T) {
+	protocolPath := filepath.Join(repoRoot, "fixtures", "protocols", "single-stage.yaml")
+	protocol, err := orchestrator.LoadProtocol(protocolPath)
+	if err != nil {
+		t.Fatalf("LoadProtocol: %v", err)
+	}
+	adapter, err := fixture.New(fixturesRoot)
+	if err != nil {
+		t.Fatalf("fixture.New: %v", err)
+	}
+	agentSet, err := orchestrator.LoadAgentSet(fixtureAgentsDir)
+	if err != nil {
+		t.Fatalf("LoadAgentSet: %v", err)
+	}
+	o, err := orchestrator.New(orchestrator.Options{
+		RepoRoot:      repoRoot,
+		ProtocolPath:  protocolPath,
+		Protocol:      protocol,
+		AgentSetPath:  fixtureAgentsDir,
+		AgentSet:      agentSet,
+		Adapters:      map[string]adapters.AgentAdapter{"fixture": adapter},
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("orchestrator.New: %v", err)
+	}
+	outcome, err := o.Run(context.Background(), "run-one-stage", "single-stage", happyPathBundle)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	w, err := NewWriter(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	runDir, err := w.WriteRun(outcome)
+	if err != nil {
+		t.Fatalf("WriteRun: %v", err)
+	}
+
+	validateAgainst(t, "schemas/run-result.schema.json", filepath.Join(runDir, "run.json"))
+	if _, err := os.Stat(filepath.Join(runDir, "evaluation", "scores.json")); !os.IsNotExist(err) {
+		t.Errorf("a one-stage run must not have scores.json, got err=%v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(runDir, "evaluation", "not-evaluated.json"))
+	if err != nil {
+		t.Fatalf("expected evaluation/not-evaluated.json: %v", err)
+	}
+	var doc struct {
+		Present []string `json:"stages_present"`
+		Absent  []string `json:"stages_absent"`
+		Reason  string   `json:"reason"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parsing not-evaluated.json: %v", err)
+	}
+	if len(doc.Present) != 1 || doc.Present[0] != "reasoner-1" || len(doc.Absent) != 2 || doc.Reason == "" {
+		t.Errorf("not-evaluated = %+v, want reasoner-1 present, two absent, a reason", doc)
+	}
+	// The stage that did run is still sealed and validated exactly as it
+	// would be in a three-stage run.
+	validateAgainst(t, "schemas/review-a.schema.json", filepath.Join(runDir, "stages", "reasoner-1", "review-a.json"))
+	assertChecksumsAreAccurate(t, runDir)
+}

@@ -25,22 +25,29 @@ import (
 	"github.com/axlev/engine-runner/internal/adapters"
 )
 
-// HandoffPolicy controls which upstream review outputs a stage may see. The
-// orchestrator derives it from the frozen protocol; the context builder
-// treats it as the sole source of truth - even if a prior review output is
-// available on disk, it is not copied unless the policy authorizes it.
+// HandoffPolicy is exactly which upstream outputs a stage may see, as the
+// frozen protocol declared them. The context builder treats it as the sole
+// source of truth: even if a prior review output is available on disk, it
+// is not copied unless a grant names it. Nothing here is inferred from the
+// stage's identity or its position - that inference used to live in a
+// switch in Prepare, and it is gone.
 type HandoffPolicy struct {
-	// EnableAToB is Pilot v1's "A-to-B handoff": whether reasoner-2 (and,
-	// transitively, reasoner-3) may see review-a.json. See section 6.4.
-	EnableAToB bool
+	Grants []HandoffGrant
 }
 
-// StageInputs carries whichever prior review outputs exist so far in the
-// run. Only the fields required by the requested stage and policy need be
-// set.
+// HandoffGrant authorizes one upstream output: stage From's output appears
+// in the receiving stage's input/handoff/ directory under the name As.
+type HandoffGrant struct {
+	From adapters.Stage
+	As   string
+}
+
+// StageInputs is where each completed stage's output lives so far in the
+// run. It says nothing about what may be seen - only the policy does. A
+// grant whose source has no recorded output is an error, never a silent
+// omission.
 type StageInputs struct {
-	ReviewAPath string
-	ReviewBPath string
+	Outputs map[adapters.Stage]string
 }
 
 // StageContext is the exact, isolated material prepared for one stage.
@@ -90,6 +97,11 @@ func New() *Builder { return &Builder{} }
 // bundleRoot is a case's prospective/ directory, i.e. the parent of
 // reviewer/ and control/.
 func (b *Builder) Prepare(stage adapters.Stage, bundleRoot, promptPath, workDir string, policy HandoffPolicy, inputs StageInputs) (StageContext, error) {
+	switch stage {
+	case adapters.StageReasoner1, adapters.StageReasoner2, adapters.StageReasoner3:
+	default:
+		return StageContext{}, fmt.Errorf("contextbuilder: unknown stage %q", stage)
+	}
 	inputDir := filepath.Join(workDir, "input")
 	if err := os.MkdirAll(inputDir, 0o755); err != nil {
 		return StageContext{}, fmt.Errorf("contextbuilder: creating input dir: %w", err)
@@ -140,38 +152,19 @@ func (b *Builder) Prepare(stage adapters.Stage, bundleRoot, promptPath, workDir 
 	}
 
 	handoffDir := filepath.Join(inputDir, "handoff")
-	switch stage {
-	case adapters.StageReasoner1:
-		// Discovery reviewer sees the prospective bundle only. No prior
-		// review exists yet, so there is nothing to authorize.
-
-	case adapters.StageReasoner2:
-		if policy.EnableAToB {
-			copied, err := copyHandoff(inputs.ReviewAPath, filepath.Join(handoffDir, "review-a.json"), workDir, "review-a")
-			if err != nil {
-				return StageContext{}, err
-			}
-			placed = append(placed, copied)
+	for _, grant := range policy.Grants {
+		// Defence in depth: the protocol loader already refused a
+		// non-bare name, but this package must not trust its caller to
+		// keep a handoff inside the handoff directory.
+		if grant.As == "" || filepath.Base(grant.As) != grant.As || strings.ContainsAny(grant.As, `/\`) {
+			return StageContext{}, fmt.Errorf("contextbuilder: stage %s: handoff name %q is not a bare file name", stage, grant.As)
 		}
-
-	case adapters.StageReasoner3:
-		// Reasoner 3 always sees exactly what reasoner 2 saw, plus
-		// review-b.json - never review-a.json on its own authority.
-		if policy.EnableAToB {
-			copied, err := copyHandoff(inputs.ReviewAPath, filepath.Join(handoffDir, "review-a.json"), workDir, "review-a")
-			if err != nil {
-				return StageContext{}, err
-			}
-			placed = append(placed, copied)
-		}
-		copied, err := copyHandoff(inputs.ReviewBPath, filepath.Join(handoffDir, "review-b.json"), workDir, "review-b")
+		src := inputs.Outputs[grant.From]
+		copied, err := copyHandoff(src, filepath.Join(handoffDir, grant.As), workDir, string(grant.From))
 		if err != nil {
 			return StageContext{}, err
 		}
 		placed = append(placed, copied)
-
-	default:
-		return StageContext{}, fmt.Errorf("contextbuilder: unknown stage %q", stage)
 	}
 
 	promptDst := filepath.Join(workDir, "prompt"+filepath.Ext(promptPath))
@@ -186,9 +179,9 @@ func (b *Builder) Prepare(stage adapters.Stage, bundleRoot, promptPath, workDir 
 	}, nil
 }
 
-func copyHandoff(src, dst, workDir, label string) (string, error) {
+func copyHandoff(src, dst, workDir, from string) (string, error) {
 	if src == "" {
-		return "", fmt.Errorf("contextbuilder: %s handoff is authorized but no %s output was supplied", label, label)
+		return "", fmt.Errorf("contextbuilder: handoff from %s is authorized but no %s output was supplied", from, from)
 	}
 	if err := copyFile(src, dst); err != nil {
 		return "", err

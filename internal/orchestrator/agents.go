@@ -126,7 +126,7 @@ func LoadAgentSet(path string) (AgentSet, error) {
 	}
 
 	set := AgentSet{}
-	for _, stage := range stageOrder {
+	for _, stage := range knownStages {
 		cfg := AgentConfig{
 			Adapter:        file.Adapter,
 			Model:          file.Model,
@@ -187,15 +187,6 @@ func LoadAgentSet(path string) (AgentSet, error) {
 	return set, nil
 }
 
-func isKnownStage(name string) bool {
-	for _, stage := range stageOrder {
-		if string(stage) == name {
-			return true
-		}
-	}
-	return false
-}
-
 // Adapters returns the distinct adapter names this set requires. A set may
 // legitimately name different adapters per stage - discovery on one vendor,
 // verification on another is a coherent experiment - so callers construct
@@ -203,7 +194,7 @@ func isKnownStage(name string) bool {
 func (s AgentSet) Adapters() []string {
 	seen := map[string]bool{}
 	var names []string
-	for _, stage := range stageOrder {
+	for _, stage := range knownStages {
 		name := s[stage].Adapter
 		if name != "" && !seen[name] {
 			seen[name] = true

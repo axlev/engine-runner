@@ -1,0 +1,25 @@
+# Fixture protocol: TWO stages, discovery then evidence, with the A->B
+# handoff declared explicitly and no reasoner-3. The shape of a treatment arm
+# that drops adversarial verification.
+#
+# The handoff is a declaration on the receiving stage, not something the
+# engine infers from reasoner-2 running second: remove the `receives` block
+# and reasoner-2 sees the prospective bundle only.
+protocol_version: fixture-two-stage-a-to-b-v1
+
+stage_order: [reasoner-1, reasoner-2]
+
+retry_policy:
+  max_attempts: 1
+
+stages:
+  reasoner-1:
+    prompt: fixtures/prompts/placeholder.md
+    output_schema: schemas/review-a.schema.json
+
+  reasoner-2:
+    prompt: fixtures/prompts/placeholder.md
+    output_schema: schemas/review-b.schema.json
+    receives:
+      - from: reasoner-1
+        as: review-a.json
