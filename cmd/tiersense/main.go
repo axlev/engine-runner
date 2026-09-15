@@ -54,11 +54,11 @@ type finding struct {
 }
 
 type detailRow struct {
-	Arm       string   `json:"arm"`
-	RunID     string   `json:"run_id"`
-	CaseID    string   `json:"case_id"`
-	FindingID string   `json:"finding_id"`
-	Files     []string `json:"files"`
+	Arm       string              `json:"arm"`
+	RunID     string              `json:"run_id"`
+	CaseID    string              `json:"case_id"`
+	FindingID string              `json:"finding_id"`
+	Files     []string            `json:"files"`
 	Matched   map[string]bool     `json:"matched_by_threshold"`
 	MatchedOn map[string][]string `json:"matched_on_paths"`
 }
