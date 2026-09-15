@@ -33,16 +33,17 @@ func main() {
 }
 
 type config struct {
-	repoRoot      string
-	protocolPath  string
-	bundleRoot    string
-	caseID        string
-	runID         string
-	fixturesDir   string
-	workspaceRoot string
-	resultsRoot   string
-	adapterImage  string
-	agentSetPath  string
+	repoRoot        string
+	protocolPath    string
+	bundleRoot      string
+	caseID          string
+	runID           string
+	fixturesDir     string
+	fixtureScenario string
+	workspaceRoot   string
+	resultsRoot     string
+	adapterImage    string
+	agentSetPath    string
 }
 
 func parseArgs(args []string) (config, error) {
@@ -54,6 +55,7 @@ func parseArgs(args []string) (config, error) {
 	fs.StringVar(&cfg.caseID, "case-id", "", "case identifier; also selects the FixtureAdapter scenario when an agent config names \"fixture\" (required)")
 	fs.StringVar(&cfg.runID, "run-id", "", "run identifier (default: generated from the current time and case-id)")
 	fs.StringVar(&cfg.fixturesDir, "fixtures-dir", "fixtures", "fixtures root, used when an agent config names \"fixture\"")
+	fs.StringVar(&cfg.fixtureScenario, "fixture-scenario", "", "route every fixture-adapter request to this scenario instead of the case id; for dry runs over real bundles (validation, checksums, metadata, sealing) with no model call")
 	fs.StringVar(&cfg.workspaceRoot, "workspace-root", defaultWorkspaceRoot(), "root under which fresh per-attempt workspace directories are created; must be outside the repository, since it is bind-mounted into stage containers")
 	fs.StringVar(&cfg.resultsRoot, "results-root", "build/results", "root under which the sealed run directory is written")
 	fs.StringVar(&cfg.adapterImage, "adapter-image", "", "container image to run the vendor CLI in, used when an agent config names \"claude\" or \"codex\"")
@@ -115,7 +117,12 @@ func buildAdapters(agentSet orchestrator.AgentSet, cfg config) (map[string]adapt
 		)
 		switch name {
 		case "fixture":
-			a, err = fixture.New(cfg.fixturesDir)
+			var fa *fixture.FixtureAdapter
+			fa, err = fixture.New(cfg.fixturesDir)
+			if err == nil && cfg.fixtureScenario != "" {
+				fa, err = fa.WithScenario(cfg.fixtureScenario)
+			}
+			a = fa
 		case "claude":
 			a, err = claude.New(cfg.adapterImage, nil)
 		case "codex":

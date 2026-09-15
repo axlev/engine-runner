@@ -299,3 +299,25 @@ func TestUnknownStageForScenarioIsAnError(t *testing.T) {
 		t.Fatalf("expected an error for a stage the scenario does not define, got nil")
 	}
 }
+
+func TestWithScenarioRoutesAnyCaseIDAndFailsClosedOnUnknown(t *testing.T) {
+	a, err := New(fixturesDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.WithScenario("no-such-scenario"); err == nil {
+		t.Error("unknown override must fail closed")
+	}
+	a, err = a.WithScenario("h1-clean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	res, err := a.Run(context.Background(), adapters.RunRequest{CaseID: "frr-2026-0042", Stage: adapters.StageReasoner1, WorkspacePath: dir, OutputSchema: "schemas/h1-review-a.schema.json"})
+	if err != nil {
+		t.Fatalf("a real case id must route to the override: %v", err)
+	}
+	if res.OutputPath == "" {
+		t.Error("no output produced")
+	}
+}

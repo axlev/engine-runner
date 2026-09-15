@@ -30,6 +30,12 @@ const adapterVersion = "fixture/v1"
 type FixtureAdapter struct {
 	dir       string
 	scenarios map[string]*scenarioFile
+	// override, when set, selects this scenario for every request instead
+	// of the request's CaseID. It exists for dry runs over REAL bundles:
+	// the case id then belongs to a mined case with no canned responses,
+	// and what is being exercised is everything around the model call -
+	// boundary validation, checksums, metadata, handoffs, sealing.
+	override string
 
 	mu    sync.Mutex
 	calls []adapters.RunRequest
@@ -44,6 +50,17 @@ func New(dir string) (*FixtureAdapter, error) {
 		return nil, err
 	}
 	return &FixtureAdapter{dir: dir, scenarios: scenarios}, nil
+}
+
+// WithScenario returns the adapter with every request routed to the named
+// scenario regardless of case id. Fails closed on an unknown name so a
+// typo cannot become "every case silently ran the wrong canned answer".
+func (f *FixtureAdapter) WithScenario(name string) (*FixtureAdapter, error) {
+	if _, ok := f.scenarios[name]; !ok {
+		return nil, fmt.Errorf("fixture: no scenario named %q to use as override", name)
+	}
+	f.override = name
+	return f, nil
 }
 
 func (f *FixtureAdapter) Name() string { return adapterName }
@@ -69,7 +86,11 @@ func (f *FixtureAdapter) Run(ctx context.Context, req adapters.RunRequest) (adap
 	f.calls = append(f.calls, req)
 	f.mu.Unlock()
 
-	scenario, ok := f.scenarios[req.CaseID]
+	key := req.CaseID
+	if f.override != "" {
+		key = f.override
+	}
+	scenario, ok := f.scenarios[key]
 	if !ok {
 		return adapters.RunResult{}, fmt.Errorf("fixture: no scenario registered for case %q", req.CaseID)
 	}
