@@ -49,23 +49,44 @@ result; say so in `empty_reason` if nothing else does either.
 
 ### State and ordering (`ordering-state-machine`)
 
-<!-- owner: the question the reviewer must answer; brief s3 row 1 -->
+For every state variable, list, queue, or timer the change touches: what
+are the legal orderings of the events that read and write it, and does the
+change create a path that reaches it in an order the code does not handle?
+For every loop the diff adds or alters: state its termination condition
+and name the input that would violate it. Cite the lines that set the
+state and the lines that test it.
 
 ### Invariants across modules (`cross-module-invariant`)
 
-<!-- owner: the question the reviewer must answer; brief s3 row 2 -->
+For every field, counter, reference count, or table entry this change
+writes: use Grep to find every reader and writer outside the diff. What
+does each of them assume about that value — that it counts live objects,
+that it is set before some call, that it is never null after some point?
+Does the change break an assumption a distant caller holds? Cite the
+callers, not only the definition.
 
 ### Configuration surfaces (`config-interaction`)
 
-<!-- owner: the question the reviewer must answer; brief s3 row 3 -->
+Which CLI commands, YANG paths, or configuration knobs reach the code this
+change touches? Use Grep on the command strings and their callbacks. Can a
+configuration sequence — set, unset, reorder, re-apply, or create and
+delete a container such as a VRF or an interface — put the code in a state
+the diff did not consider? Trace one such sequence and cite where it ends.
 
 ### Error and lifecycle paths (`error-path-lifecycle`)
 
-<!-- owner: the question the reviewer must answer; brief s3 row 4 -->
+For every early return, error branch, and free in or near the diff: what
+is left allocated, linked, registered, or scheduled when that path is
+taken? Is a pre-existing error path now reachable from a new place because
+of this change? Cite the allocation and the exit that skips its release.
 
 ### Restart and upgrade (`restart-upgrade`)
 
-<!-- owner: the question the reviewer must answer; brief s3 row 5 -->
+If the daemon restarts, is warm-restarted, or is upgraded across this
+change while peers or persisted state remain from the old version: what
+state does the new code read that the old code wrote, and the reverse?
+Does anything assume both sides run the same version? Cite the read and
+the write.
 
 <!-- LENSES:END -->
 
