@@ -90,6 +90,14 @@ var evaluatorOnlyMarkers = []string{
 	"-evaluator-only",
 	"retrospective-evaluator-only",
 	"correlated-report.json",
+	// H1 evaluator material: the section 8 scan's keys (fixing commits,
+	// post-merge discussion) and output, the label file, the history
+	// baseline, and the fixing-commit paths. Each names the outcome.
+	"contamination-keys",
+	"contamination-scan",
+	"h1-labels",
+	"history-baseline",
+	"h1-fixing-paths",
 }
 
 // TestReviewPathNamesNoEvaluatorOnlyPath closes the door the import guard
