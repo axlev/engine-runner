@@ -1,0 +1,34 @@
+# h1-g-v1 - arm G of the H1 pre-registration: a generic single-pass
+# reviewer. Canonical definition: miner/docs/h1-preregistration.md section 4;
+# prompt design: docs/h1-treatment-prompt-brief.md.
+#
+# This is the LLM baseline arm T is measured against. Its prompt is fresh -
+# not pilot-v1's reasoner-1.md, which tells the reviewer to favour recall
+# and would hand T a precision edge that is calibration, not system
+# awareness. G carries the same calibration paragraph, tests step, output
+# contract and severity definitions as T word for word, and differs from T's
+# discovery prompt only by the absence of the five domain lenses. The
+# staging difference (T substantiates, G does not) is an accepted confound,
+# stated in the results, not here.
+#
+# The verdict (RISKY/CLEAN) is not in this protocol's output. The scorer
+# computes it from severity and confidence (pre-registration section 5).
+#
+# Runs beside pilot-v1, never edits it. Vendor binding lives in
+# configs/agents/; the H1 arm file grants Read, Grep, Glob.
+#
+#   # smoke test
+#   bench -protocol configs/protocols/h1-g-v1.yaml -agents fixtures/agents/fixture.yaml -case-id h1-single-stage ...
+
+protocol_version: h1-g-v1
+
+stage_order: [reasoner-1]
+
+retry_policy:
+  # One repair attempt on invalid structured output, as pilot-v1.
+  max_attempts: 2
+
+stages:
+  reasoner-1:
+    prompt: prompts/h1-g-v1/reasoner-1.md
+    output_schema: schemas/h1-review-a.schema.json
