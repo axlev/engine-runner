@@ -729,6 +729,7 @@ func Score(o Options) (Report, error) {
 			"recall":                  "TP / (TP + FN); reported, not criterial (pre-registration s2)",
 			"hit_match":               "a recommended path equals a fixing path, or a fixing path lies under a recommended directory; over RISKY true positives with an h1-fixing-paths file",
 			"pairwise_null":           "per case, the two arms' verdicts are exchangeable; reference distribution swaps them on the discordant cases",
+			"pairwise_test":           "paired-exchangeable-verdicts, exact <=20 discordant, MC 200k seeded above",
 			"exact_limit_discordant":  exactLimit,
 			"preregistered_threshold": o.Threshold,
 			"voided_runs":             "excluded from the arm and counted; from contamination-scan/v1 void=true",
