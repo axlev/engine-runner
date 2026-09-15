@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"sort"
 )
 
@@ -62,6 +63,11 @@ func RuleTextSHA256() string {
 // ">= medium" comparison; it is not a weight.
 var severityRank = map[string]int{"low": 1, "medium": 2, "high": 3, "critical": 4}
 
+// SeverityWeights are pre-registration s12 A6 (miner d20eeee): linear, so
+// ROC ordering is by severity and then by confidence within severity. Used
+// only for the continuous risk score; the binary rule is unaffected.
+var SeverityWeights = map[string]float64{"low": 0.25, "medium": 0.5, "high": 0.75, "critical": 1.0}
+
 var countingDispositions = []string{"CONFIRMED", "NARROWED"}
 
 // Rule is the scoring rule as applied, written into every verdict.
@@ -71,9 +77,10 @@ type Rule struct {
 	SeverityThreshold   string   `json:"severity_threshold"`
 	DispositionSet      []string `json:"disposition_set,omitempty"`
 	ConfidenceThreshold *float64 `json:"confidence_threshold,omitempty"`
-	// SeverityWeights is nil until the pre-registration names the weights
-	// for the continuous score; see Verdict.RiskScoreOmitted.
+	// SeverityWeights are A6's weights as applied.
 	SeverityWeights map[string]float64 `json:"severity_weights"`
+	// RiskScoreOver names the finding set risk_score ranges over.
+	RiskScoreOver string `json:"risk_score_over"`
 }
 
 // PrimaryFinding is the case's highest-ranked surviving claim - what the
@@ -109,10 +116,15 @@ type Verdict struct {
 
 	Verdict string `json:"verdict"`
 
-	// RiskScore is the section 5 continuous score, absent until the
-	// pre-registration defines the severity weights it needs.
-	RiskScore        *float64 `json:"risk_score"`
-	RiskScoreOmitted string   `json:"risk_score_omitted,omitempty"`
+	// RiskScore is section 5's continuous score with A6's weights: max of
+	// severity-weight x confidence over the findings the verdict rule
+	// considers (T: stage-B survivors; G: all findings). 0 when none.
+	RiskScore *float64 `json:"risk_score"`
+	// RiskScoreAllDiscovered is the same statistic over every discovery
+	// finding regardless of stage-B disposition - the other reading of
+	// "max over findings", recorded so either ROC can be drawn without a
+	// re-run. Identical to RiskScore under G.
+	RiskScoreAllDiscovered *float64 `json:"risk_score_all_discovered"`
 
 	PrimaryFinding *PrimaryFinding `json:"primary_finding"`
 	// DecidingFinding is set only when the finding that satisfied the
@@ -192,13 +204,13 @@ func ScoreCase(runID, caseID, armRule, reviewAPath, reviewBPath string) (Verdict
 	}
 
 	v := Verdict{
-		SchemaVersion:      VerdictSchemaVersion,
-		RunID:              runID,
-		CaseID:             caseID,
-		ArmRule:            armRule,
-		Rule:               Rule{RuleVersion: RuleVersion, RuleTextSHA256: RuleTextSHA256(), SeverityThreshold: severityThreshold},
+		SchemaVersion: VerdictSchemaVersion,
+		RunID:         runID,
+		CaseID:        caseID,
+		ArmRule:       armRule,
+		Rule: Rule{RuleVersion: RuleVersion, RuleTextSHA256: RuleTextSHA256(), SeverityThreshold: severityThreshold,
+			SeverityWeights: SeverityWeights},
 		Verdict:            VerdictClean,
-		RiskScoreOmitted:   "severity weights are not in the pre-registration",
 		RecommendedPaths:   []string{},
 		FindingsDiscovered: len(a.Findings),
 	}
@@ -213,6 +225,7 @@ func ScoreCase(runID, caseID, armRule, reviewAPath, reviewBPath string) (Verdict
 	var counts []bool
 
 	if armRule == ArmRuleG {
+		v.Rule.RiskScoreOver = "all discovery findings"
 		ct := confidenceThreshold
 		v.Rule.ConfidenceThreshold = &ct
 		for _, f := range a.Findings {
@@ -227,6 +240,7 @@ func ScoreCase(runID, caseID, armRule, reviewAPath, reviewBPath string) (Verdict
 		if b.SchemaVersion != "h1-review-b/v1" {
 			return Verdict{}, fmt.Errorf("evaluation: %s is %q, not an h1-review-b/v1 document", reviewBPath, b.SchemaVersion)
 		}
+		v.Rule.RiskScoreOver = "stage-B survivors (CONFIRMED or NARROWED)"
 		v.Rule.DispositionSet = append([]string(nil), countingDispositions...)
 		survivors := 0
 		for _, as := range b.Assessments {
@@ -270,6 +284,16 @@ func ScoreCase(runID, caseID, armRule, reviewAPath, reviewBPath string) (Verdict
 		v.RecommendedPaths = append(v.RecommendedPaths, p)
 	}
 	sort.Strings(v.RecommendedPaths)
+
+	rs := 0.0
+	for _, c := range candidates {
+		rs = math.Max(rs, SeverityWeights[c.Severity]*c.Confidence)
+	}
+	all := 0.0
+	for _, f := range a.Findings {
+		all = math.Max(all, SeverityWeights[f.Severity]*f.Confidence)
+	}
+	v.RiskScore, v.RiskScoreAllDiscovered = &rs, &all
 	return v, nil
 }
 

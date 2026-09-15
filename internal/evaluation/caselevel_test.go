@@ -69,8 +69,8 @@ func TestArmGRule(t *testing.T) {
 		if v.Rule.ConfidenceThreshold == nil || *v.Rule.ConfidenceThreshold != 0.6 || v.Rule.DispositionSet != nil {
 			t.Errorf("%s: G rule block wrong: %+v", c.name, v.Rule)
 		}
-		if v.RiskScore != nil || v.RiskScoreOmitted == "" || v.Rule.SeverityWeights != nil {
-			t.Errorf("%s: risk score must be omitted with a reason until weights are registered", c.name)
+		if v.RiskScore == nil || v.Rule.SeverityWeights["critical"] != 1.0 || v.Rule.RiskScoreOver == "" {
+			t.Errorf("%s: risk score and A6 weights must be recorded", c.name)
 		}
 		if v.Rule.RuleVersion != RuleVersion || v.Rule.SeverityThreshold != "medium" {
 			t.Errorf("%s: rule not self-described: %+v", c.name, v.Rule)
@@ -170,5 +170,31 @@ func TestRuleTextMatchesPreregistration(t *testing.T) {
 	}
 	if len(RuleTextSHA256()) != 64 {
 		t.Error("rule hash malformed")
+	}
+}
+
+// A6: risk_score = max severity-weight x confidence. Under T over the
+// survivors; risk_score_all_discovered over every discovery finding.
+func TestA6RiskScore(t *testing.T) {
+	dir := t.TempDir()
+	a := h1ReviewADoc(h1Finding_("f1", "critical", 0.5), h1Finding_("f2", "low", 1.0), h1Finding_("f3", "high", 0.8))
+	v, err := ScoreCase("r", "c", ArmRuleG, writeDoc(t, dir, "a.json", a), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *v.RiskScore != 0.6 || *v.RiskScoreAllDiscovered != 0.6 { // high 0.75 x 0.8
+		t.Errorf("G: %v / %v", *v.RiskScore, *v.RiskScoreAllDiscovered)
+	}
+	b := h1ReviewBDoc(h1Assessment_("f1", "CONFIRMED", "t/x"), h1Assessment_("f3", "REJECTED"))
+	v, err = ScoreCase("r", "c", ArmRuleT, writeDoc(t, dir, "a2.json", a), writeDoc(t, dir, "b.json", b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *v.RiskScore != 0.25 || *v.RiskScoreAllDiscovered != 0.6 { // survivor f1: 1.0 x 0.5
+		t.Errorf("T: %v / %v", *v.RiskScore, *v.RiskScoreAllDiscovered)
+	}
+	empty, _ := ScoreCase("r", "c", ArmRuleG, writeDoc(t, dir, "e.json", h1ReviewADoc()), "")
+	if *empty.RiskScore != 0 {
+		t.Errorf("empty: %v", *empty.RiskScore)
 	}
 }

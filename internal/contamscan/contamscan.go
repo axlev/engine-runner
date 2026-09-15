@@ -32,11 +32,14 @@ const (
 	// MinSHAPrefix is section 8's "any prefix >= 7".
 	MinSHAPrefix = 7
 
-	// ShingleTokens is the operational definition of "a phrase lifted
-	// from post-merge discussion": this many consecutive tokens in common.
-	// Section 8 does not define the phrase test; this value is recorded in
-	// every output and is the thing to register.
-	ShingleTokens = 8
+	// ShingleTokens and MinNovelTokens are pre-registration s12 A7 (miner
+	// d20eeee): a lifted phrase is 8 consecutive shared tokens, and a
+	// window counts only if at least 3 of them fall outside every excluded
+	// span - a reviewer sentence bridging two legitimately quoted lines
+	// with its own connector is not a lift; a lifted 8-token phrase next
+	// to a quote still is. Both are recorded in every output.
+	ShingleTokens  = 8
+	MinNovelTokens = 3
 )
 
 // Keys is contamination-keys/v1: what a reviewer could only know by having
@@ -71,6 +74,10 @@ type Rules struct {
 	// them against discussion could only manufacture a void. The other
 	// three rules still scan them.
 	DiscussionSkipsPaths []string `json:"discussion_skips_paths"`
+	// MinNovelTokens is A7's novelty threshold, applied when an exclusion
+	// set exists; without one there are no excluded spans to be novel
+	// against and every shared window counts (and is marked unexcluded).
+	MinNovelTokens int `json:"min_novel_tokens"`
 }
 
 // Hit is one match. Kind is sha, pr, cve, or discussion.
@@ -129,6 +136,7 @@ func rules(exclusionSources []string) Rules {
 		ShingleTokens:        ShingleTokens,
 		ExclusionSources:     exclusionSources,
 		DiscussionSkipsPaths: []string{"*" + discussionSkipSuffix},
+		MinNovelTokens:       MinNovelTokens,
 	}
 }
 
@@ -385,14 +393,14 @@ func ScanRun(runDir string, keys Keys, keysSHA string, bundleRoot string) (Scan,
 		var values []stringValue
 		collectStrings(r.doc, "$", &values)
 		for _, sv := range values {
-			scan.Hits = append(scan.Hits, scanString(r.stage, sv, shas, prs, cves, discussion, ex == nil)...)
+			scan.Hits = append(scan.Hits, scanString(r.stage, sv, shas, prs, cves, discussion, ex)...)
 		}
 	}
 	scan.Void = len(scan.Hits) > 0
 	return scan, nil
 }
 
-func scanString(stage string, sv stringValue, shas []string, prs, cves map[string]bool, discussion map[string]string, unexcluded bool) []Hit {
+func scanString(stage string, sv stringValue, shas []string, prs, cves map[string]bool, discussion map[string]string, ex *Exclusion) []Hit {
 	var hits []Hit
 	for _, tok := range hexToken.FindAllString(sv.Value, -1) {
 		lower := strings.ToLower(tok)
@@ -418,7 +426,7 @@ func scanString(stage string, sv stringValue, shas []string, prs, cves map[strin
 		hits = append(hits, Hit{Kind: "cve", Stage: stage, JSONPath: sv.Path, Matched: c, KeyRef: ref})
 	}
 	if len(discussion) > 0 && !strings.HasSuffix(sv.Path, discussionSkipSuffix) {
-		hits = append(hits, discussionHits(stage, sv, discussion, unexcluded)...)
+		hits = append(hits, discussionHits(stage, sv, discussion, ex)...)
 	}
 	return hits
 }
@@ -426,10 +434,32 @@ func scanString(stage string, sv stringValue, shas []string, prs, cves map[strin
 // discussionHits reports each maximal run of consecutive matching shingles
 // as one hit whose Matched is the whole shared span, so a lifted sentence
 // is one hit and not one per window.
-func discussionHits(stage string, sv stringValue, discussion map[string]string, unexcluded bool) []Hit {
+func discussionHits(stage string, sv stringValue, discussion map[string]string, ex *Exclusion) []Hit {
+	unexcluded := ex == nil
 	t := tokens(sv.Value)
 	if len(t) < ShingleTokens {
 		return nil
+	}
+	// A7: mark every token of this string covered by an excluded window,
+	// then require MinNovelTokens uncovered tokens in a matching window.
+	covered := make([]bool, len(t))
+	if ex != nil {
+		for i := 0; i+ShingleTokens <= len(t); i++ {
+			if ex.shingles[strings.Join(t[i:i+ShingleTokens], " ")] {
+				for k := i; k < i+ShingleTokens; k++ {
+					covered[k] = true
+				}
+			}
+		}
+	}
+	novelEnough := func(i int) bool {
+		n := 0
+		for k := i; k < i+ShingleTokens; k++ {
+			if !covered[k] {
+				n++
+			}
+		}
+		return n >= MinNovelTokens
 	}
 	var hits []Hit
 	start := -1
@@ -447,6 +477,7 @@ func discussionHits(stage string, sv stringValue, discussion map[string]string, 
 	}
 	for i := 0; i+ShingleTokens <= len(t); i++ {
 		src, ok := discussion[strings.Join(t[i:i+ShingleTokens], " ")]
+		ok = ok && novelEnough(i)
 		if ok && start < 0 {
 			start, source = i, src
 		} else if !ok && start >= 0 {

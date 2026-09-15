@@ -274,3 +274,26 @@ func TestLoadHistoryToleratesAdditionsAndTreatsNullAsAbsent(t *testing.T) {
 		t.Errorf("%+v", ah)
 	}
 }
+
+// A8: Fisher's tea-tasting table [[3 1] [1 3]] gives two-sided p = 0.4857.
+func TestA8FisherExact(t *testing.T) {
+	if p := fisherExactTwoSided(3, 1, 1, 3); math.Abs(p-0.485714) > 1e-4 {
+		t.Errorf("p = %v, want 0.4857", p)
+	}
+	if p := fisherExactTwoSided(0, 0, 0, 0); p != 1 {
+		t.Errorf("empty table p = %v", p)
+	}
+	l := cohort(2)
+	T := verdicts(map[string]bool{"posa": true, "nega": false, "posb": true, "negb": false})
+	r, err := Score(Options{Labels: l, ArmIDs: map[string]string{"T": "t", "G": "g"},
+		Verdicts: map[string]map[string]CaseVerdict{"T": T, "G": T}, Threshold: 15})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := r.Arms["T"].VsChance; v == nil || v.TwoSided == nil || math.Abs(*v.TwoSided-1.0/3) > 1e-9 {
+		t.Errorf("[[2 0][0 2]] two-sided p should be 1/3, got %+v", v)
+	}
+	if v := r.Arms["H"].VsChance; v == nil || v.Absent == "" {
+		t.Errorf("H with no cases: absent with a reason, got %+v", v)
+	}
+}

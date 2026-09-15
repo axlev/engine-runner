@@ -242,3 +242,38 @@ func TestSummaryCountsPerArm(t *testing.T) {
 		t.Errorf("%+v", s)
 	}
 }
+
+// A7: the bridge case (7 quoted tokens + the reviewer's connector) does
+// not void; a lifted sentence adjacent to a quote still does.
+func TestA7BridgeIsNotALiftButAdjacentLiftIs(t *testing.T) {
+	dir := t.TempDir()
+	quoted := "if (peer->status == Deleted) return; /* guard added upstream by the caller */"
+	lifted := "the timer is cancelled before the session state is torn down"
+	k, sum := keysFor(t, dir, Keys{CaseID: "c", Discussion: []Discussion{{Source: "d", Body: quoted + " and " + lifted}}})
+	bundle := bundleWith(t, dir, "+"+quoted+"\n", `{}`)
+
+	bridge := runWith(t, dir, "c", `{"summary":"`+quoted+` and the rest is fine here"}`)
+	s, err := ScanRun(bridge, k, sum, bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Void || s.Rules.MinNovelTokens != MinNovelTokens {
+		t.Errorf("bridge must not void under A7; rules must record the threshold: %+v", s)
+	}
+
+	adjacent := runWith(t, dir, "c", `{"summary":"`+quoted+` and `+lifted+`"}`)
+	s, err = ScanRun(adjacent, k, sum, bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Void || len(s.Hits) != 1 || !strings.Contains(s.Hits[0].Matched, "torn down") {
+		t.Errorf("adjacent lifted sentence must still void as one span: %+v", s.Hits)
+	}
+
+	// Without a bundle there are no excluded spans; every window is novel
+	// and the bridge voids, marked unexcluded.
+	s, _ = ScanRun(bridge, k, sum, "")
+	if !s.Void || !s.Hits[0].Unexcluded {
+		t.Errorf("without exclusion the bridge voids and says unexcluded: %+v", s.Hits)
+	}
+}

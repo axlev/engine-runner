@@ -122,13 +122,62 @@ type ArmReport struct {
 	Absent      []string `json:"absent_cases"`
 	// AbsentReasons carries, for arm H, the file\'s own reason for a null
 	// verdict (an unresolvable base commit); absent files have no entry.
-	AbsentReasons map[string]string  `json:"absent_reasons,omitempty"`
-	Counts        Counts             `json:"counts"`
-	Precision     Rate               `json:"precision"`
-	Recall        Rate               `json:"recall"`
-	RecallByClass map[string]Rate    `json:"recall_by_class"`
-	HitRate       *HitRate           `json:"recommended_validation_hit_rate,omitempty"`
-	Strata        map[string]Stratum `json:"by_admission_description"`
+	AbsentReasons map[string]string `json:"absent_reasons,omitempty"`
+	Counts        Counts            `json:"counts"`
+	Precision     Rate              `json:"precision"`
+	Recall        Rate              `json:"recall"`
+	RecallByClass map[string]Rate   `json:"recall_by_class"`
+	HitRate       *HitRate          `json:"recommended_validation_hit_rate,omitempty"`
+	// VsChance is A8\'s per-arm test: case-level Fisher exact, two-sided, on
+	// the arm\'s RISKY/CLEAN x positive/negative table.
+	VsChance *VsChance          `json:"vs_chance"`
+	Strata   map[string]Stratum `json:"by_admission_description"`
+}
+
+type VsChance struct {
+	Test     string   `json:"test"`
+	TwoSided *float64 `json:"two_sided"`
+	Absent   string   `json:"absent,omitempty"`
+}
+
+// fisherExactTwoSided is the permutation distribution of the 2x2 table
+// [[a b] [c d]] under fixed margins: the sum of the probabilities of every
+// table at least as improbable as the observed one (A8). Case-level, so
+// the pilot's clustering objection does not apply.
+func fisherExactTwoSided(a, b, c, d int) float64 {
+	r1, r2, c1, n := a+b, c+d, a+c, a+b+c+d
+	if n == 0 {
+		return 1
+	}
+	lg := func(x int) float64 { l, _ := math.Lgamma(float64(x + 1)); return l }
+	logC := func(n, k int) float64 { return lg(n) - lg(k) - lg(n-k) }
+	prob := func(x int) float64 { return math.Exp(logC(r1, x) + logC(r2, c1-x) - logC(n, c1)) }
+	obs := prob(a)
+	lo, hi := 0, c1
+	if c1-r2 > lo {
+		lo = c1 - r2
+	}
+	if r1 < hi {
+		hi = r1
+	}
+	p := 0.0
+	for x := lo; x <= hi; x++ {
+		if px := prob(x); px <= obs*(1+1e-9) {
+			p += px
+		}
+	}
+	return math.Min(p, 1)
+}
+
+func vsChance(c Counts) *VsChance {
+	v := &VsChance{Test: "case-level Fisher exact, two-sided (A8)"}
+	if c.TP+c.FP+c.FN+c.TN == 0 {
+		v.Absent = "no cases scored"
+		return v
+	}
+	p := fisherExactTwoSided(c.TP, c.FP, c.FN, c.TN)
+	v.TwoSided = &p
+	return v
 }
 
 type Stratum struct {
@@ -478,6 +527,7 @@ func armReport(arm, armID string, labels map[string]Label, verdicts map[string]C
 	r := ArmReport{Arm: arm, ArmID: armID, Voided: len(voided), VoidedCases: voided, RecallByClass: map[string]Rate{}, Strata: map[string]Stratum{}, Absent: []string{}}
 	r.Counts, r.Cases = countsFor(labels, verdicts, nil)
 	r.Precision, r.Recall = precisionOf(r.Counts), recallOf(r.Counts)
+	r.VsChance = vsChance(r.Counts)
 	classes := map[string]bool{}
 	strata := map[string]bool{}
 	for id, l := range labels {
@@ -756,7 +806,8 @@ func Score(o Options) (Report, error) {
 			"recall":                  "TP / (TP + FN); reported, not criterial (pre-registration s2)",
 			"hit_match":               "a recommended path equals a fixing path, or a fixing path lies under a recommended directory; over RISKY true positives with an h1-fixing-paths file",
 			"pairwise_null":           "per case, the two arms' verdicts are exchangeable; reference distribution swaps them on the discordant cases",
-			"pairwise_test":           "paired-exchangeable-verdicts, exact <=20 discordant, MC 200k seeded above",
+			"pairwise_test":           "paired-exchangeable-verdicts, exact <=20 discordant, MC 200k seeded above (A8)",
+			"per_arm_vs_chance":       "case-level Fisher exact, two-sided, one per arm, on the verdict x label table under fixed margins (A8); not criterial",
 			"exact_limit_discordant":  exactLimit,
 			"preregistered_threshold": o.Threshold,
 			"voided_runs":             "excluded from the arm and counted; from contamination-scan/v1 void=true",
