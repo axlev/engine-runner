@@ -39,7 +39,7 @@ func main() {
 	armIDs := map[string]string{h1score.ArmT: *armT, h1score.ArmG: *armG}
 	verdicts, voidCases, err := h1score.LoadVerdicts(*runs, armIDs, voided)
 	check(err)
-	hist, err := h1score.LoadHistory(*history, l.Cases)
+	hist, histReasons, err := h1score.LoadHistory(*history, l.Cases)
 	check(err)
 	fp, err := h1score.LoadFixingPaths(*fixing, l.Cases)
 	check(err)
@@ -54,7 +54,7 @@ func main() {
 	}
 	report, err := h1score.Score(h1score.Options{
 		Labels: l, Inputs: inputs, ArmIDs: armIDs, Verdicts: verdicts, Voided: voidCases,
-		History: hist, FixingPaths: fp, Threshold: *threshold,
+		History: hist, HistoryAbsentReasons: histReasons, FixingPaths: fp, Threshold: *threshold,
 	})
 	check(err)
 	check(os.MkdirAll(*out, 0o755))

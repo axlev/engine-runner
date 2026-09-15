@@ -227,3 +227,50 @@ func TestVoidedOnlyRunIsAbsentNotFatal(t *testing.T) {
 		t.Errorf("%+v", at)
 	}
 }
+
+// history-baseline/v1 as the miner builds it: unknown top-level keys are
+// tolerated, rule need only be an object, and risky: null with a reason
+// makes the case absent for H - never CLEAN.
+func TestLoadHistoryToleratesAdditionsAndTreatsNullAsAbsent(t *testing.T) {
+	dir := t.TempDir()
+	write := func(id, body string) {
+		_ = os.WriteFile(filepath.Join(dir, id+".json"), []byte(body), 0o644)
+	}
+	write("c1", `{"schema_version":"history-baseline/v1","case_id":"c1","risky":true,"score":0.9,"subsystem":"bgpd","tercile":3,
+	  "rule":{"window_months":24,"signal_tiers":["strong"],"risky_if":"top tercile","note":"x"},"provenance":{},
+	  "detail":{"anything":1},"merge_base":"abc"}`)
+	write("c2", `{"schema_version":"history-baseline/v1","case_id":"c2","risky":null,"reason":"base commit unresolvable",
+	  "score":0,"subsystem":"","tercile":0,"rule":{},"provenance":{}}`)
+	write("c4", `{"schema_version":"history-baseline/v1","case_id":"c4","risky":false,"rule":"not an object","provenance":{}}`)
+	cases := []Label{{CaseID: "c1"}, {CaseID: "c2"}, {CaseID: "c3"}}
+	h, reasons, err := LoadHistory(dir, cases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := h["c1"]; !ok || !v.Risky {
+		t.Errorf("c1 with extra keys must load risky=true: %+v", h)
+	}
+	if _, ok := h["c2"]; ok || reasons["c2"] != "base commit unresolvable" {
+		t.Errorf("null risky must be absent with its reason: %v %v", h, reasons)
+	}
+	if _, ok := h["c3"]; ok || reasons["c3"] != "" {
+		t.Errorf("missing file is absent with no reason entry: %v %v", h, reasons)
+	}
+	if _, _, err := LoadHistory(dir, []Label{{CaseID: "c4"}}); err == nil {
+		t.Error("rule that is not an object must fail")
+	}
+
+	// The reason travels into the report; H's counts exclude the case.
+	l := cohort(1)
+	l.Cases[0].CaseID, l.Cases[1].CaseID = "c1", "c2"
+	T := verdicts(map[string]bool{"c1": true, "c2": false})
+	r, err := Score(Options{Labels: l, ArmIDs: map[string]string{"T": "t", "G": "g"},
+		Verdicts: map[string]map[string]CaseVerdict{"T": T, "G": {}}, History: h, HistoryAbsentReasons: reasons})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ah := r.Arms["H"]
+	if ah.Cases != 1 || len(ah.Absent) != 1 || ah.Absent[0] != "c2" || ah.AbsentReasons["c2"] != "base commit unresolvable" {
+		t.Errorf("%+v", ah)
+	}
+}

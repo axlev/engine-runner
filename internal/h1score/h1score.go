@@ -64,15 +64,22 @@ type Label struct {
 	} `json:"admission"`
 }
 
+// HistoryBaseline is history-baseline/v1, produced in the miner (Alex's
+// decision, 2026-09-15). Only the fields read are pinned; unknown
+// top-level keys (detail, reason, merge_base, ...) are tolerated, and
+// rule is checked only for being an object. risky may be null, with a
+// reason, for a case whose base commit could not be resolved: that case
+// is absent for H, like a missing file, never CLEAN.
 type HistoryBaseline struct {
-	SchemaVersion string  `json:"schema_version"`
-	CaseID        string  `json:"case_id"`
-	Risky         bool    `json:"risky"`
-	Score         float64 `json:"score"`
-	Subsystem     string  `json:"subsystem"`
-	Tercile       int     `json:"tercile"`
-	Rule          any     `json:"rule"`
-	Provenance    any     `json:"provenance"`
+	SchemaVersion string         `json:"schema_version"`
+	CaseID        string         `json:"case_id"`
+	Risky         *bool          `json:"risky"`
+	Reason        string         `json:"reason"`
+	Score         float64        `json:"score"`
+	Subsystem     string         `json:"subsystem"`
+	Tercile       int            `json:"tercile"`
+	Rule          map[string]any `json:"rule"`
+	Provenance    any            `json:"provenance"`
 }
 
 type FixingPaths struct {
@@ -107,12 +114,15 @@ type Rate struct {
 }
 
 type ArmReport struct {
-	Arm           string             `json:"arm"`
-	ArmID         string             `json:"arm_id"`
-	Cases         int                `json:"cases"`
-	Voided        int                `json:"voided"`
-	VoidedCases   []string           `json:"voided_cases"`
-	Absent        []string           `json:"absent_cases"`
+	Arm         string   `json:"arm"`
+	ArmID       string   `json:"arm_id"`
+	Cases       int      `json:"cases"`
+	Voided      int      `json:"voided"`
+	VoidedCases []string `json:"voided_cases"`
+	Absent      []string `json:"absent_cases"`
+	// AbsentReasons carries, for arm H, the file\'s own reason for a null
+	// verdict (an unresolvable base commit); absent files have no entry.
+	AbsentReasons map[string]string  `json:"absent_reasons,omitempty"`
 	Counts        Counts             `json:"counts"`
 	Precision     Rate               `json:"precision"`
 	Recall        Rate               `json:"recall"`
@@ -340,10 +350,14 @@ func LoadVoided(scansDir string) (map[string]bool, error) {
 
 // LoadHistory reads <dir>/<case_id>.json history-baseline/v1 files for the
 // labelled cases. Missing files make H absent for that case, not CLEAN.
-func LoadHistory(dir string, cases []Label) (map[string]CaseVerdict, error) {
+//
+// The second return maps case id to the file's stated reason when risky
+// is null; those cases are not in the first return.
+func LoadHistory(dir string, cases []Label) (map[string]CaseVerdict, map[string]string, error) {
 	out := map[string]CaseVerdict{}
+	reasons := map[string]string{}
 	if dir == "" {
-		return out, nil
+		return out, reasons, nil
 	}
 	for _, c := range cases {
 		p := filepath.Join(dir, c.CaseID+".json")
@@ -353,14 +367,25 @@ func LoadHistory(dir string, cases []Label) (map[string]CaseVerdict, error) {
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if h.SchemaVersion != historySchema || h.CaseID != c.CaseID {
-			return nil, fmt.Errorf("h1score: %s is not a %s file for %s", p, historySchema, c.CaseID)
+			return nil, nil, fmt.Errorf("h1score: %s is not a %s file for %s", p, historySchema, c.CaseID)
 		}
-		out[c.CaseID] = CaseVerdict{CaseID: c.CaseID, RunID: "history:" + c.CaseID, Risky: h.Risky}
+		if h.Rule == nil {
+			return nil, nil, fmt.Errorf("h1score: %s: rule must be an object", p)
+		}
+		if h.Risky == nil {
+			reason := h.Reason
+			if reason == "" {
+				reason = "risky is null and no reason given"
+			}
+			reasons[c.CaseID] = reason
+			continue
+		}
+		out[c.CaseID] = CaseVerdict{CaseID: c.CaseID, RunID: "history:" + c.CaseID, Risky: *h.Risky}
 	}
-	return out, nil
+	return out, reasons, nil
 }
 
 // LoadFixingPaths reads <dir>/<case_id>.json h1-fixing-paths/v1 files.
@@ -674,14 +699,16 @@ func pairwise(name string, labels map[string]Label, treat, base map[string]CaseV
 
 // Options are the inputs to Score, already loaded and checked.
 type Options struct {
-	Labels      Labels
-	Inputs      map[string]string // name -> sha256 or path, recorded verbatim
-	ArmIDs      map[string]string // T -> protocol id, G -> protocol id
-	Verdicts    map[string]map[string]CaseVerdict
-	Voided      map[string][]string // arm -> voided case ids
-	History     map[string]CaseVerdict
-	FixingPaths map[string][]string
-	Threshold   float64 // pre-registered points, 15
+	Labels   Labels
+	Inputs   map[string]string // name -> sha256 or path, recorded verbatim
+	ArmIDs   map[string]string // T -> protocol id, G -> protocol id
+	Verdicts map[string]map[string]CaseVerdict
+	Voided   map[string][]string // arm -> voided case ids
+	History  map[string]CaseVerdict
+	// HistoryAbsentReasons is LoadHistory\'s second return.
+	HistoryAbsentReasons map[string]string
+	FixingPaths          map[string][]string
+	Threshold            float64 // pre-registered points, 15
 }
 
 // Score computes the report. It fails closed on a run whose case has no
@@ -755,7 +782,11 @@ func Score(o Options) (Report, error) {
 
 	r.Arms[ArmT] = armReport(ArmT, o.ArmIDs[ArmT], labels, o.Verdicts[ArmT], o.Voided[ArmT], o.FixingPaths, true)
 	r.Arms[ArmG] = armReport(ArmG, o.ArmIDs[ArmG], labels, o.Verdicts[ArmG], o.Voided[ArmG], o.FixingPaths, true)
-	r.Arms[ArmH] = armReport(ArmH, "history-baseline/v1", labels, o.History, nil, nil, false)
+	h := armReport(ArmH, "history-baseline/v1", labels, o.History, nil, nil, false)
+	if len(o.HistoryAbsentReasons) > 0 {
+		h.AbsentReasons = o.HistoryAbsentReasons
+	}
+	r.Arms[ArmH] = h
 
 	r.Pairwise = append(r.Pairwise, pairwise("T-G", labels, o.Verdicts[ArmT], o.Verdicts[ArmG], o.Threshold))
 	r.Pairwise = append(r.Pairwise, pairwise("T-H", labels, o.Verdicts[ArmT], o.History, o.Threshold))
