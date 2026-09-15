@@ -260,6 +260,14 @@ func (o *Orchestrator) runStageWithRetries(
 	agentCfg := o.AgentSet[stage]
 	adapter := o.Adapters[agentCfg.Adapter]
 
+	// The version this stage's output must be stamped with comes from the
+	// schema the protocol declared for it. Fatal: a stage whose schema does
+	// not say what it is cannot produce a validatable document.
+	schemaVersion, err := schemaVersionOf(filepath.Join(o.RepoRoot, stageProto.OutputSchema))
+	if err != nil {
+		return "", nil, fmt.Errorf("stage %s: %w", stage, err)
+	}
+
 	// Read once per stage rather than per attempt: the file cannot change
 	// mid-stage, and a read failure should not be discovered on a retry.
 	// Non-fatal - an adapter that cannot use it ignores it, and the
@@ -362,7 +370,7 @@ func (o *Orchestrator) runStageWithRetries(
 		// The reasoner authors content; the engine supplies identity. This
 		// runs before validation because the schemas require the envelope
 		// fields the reasoner cannot know.
-		if err := stampEnvelope(result.OutputPath, runID, caseID, stage, time.Now()); err != nil {
+		if err := stampEnvelope(result.OutputPath, runID, caseID, stage, schemaVersion, time.Now()); err != nil {
 			record.Err = err.Error()
 			records = append(records, record)
 			lastErr = fmt.Errorf("stage %s attempt %d: %w", stage, attempt, err)
@@ -387,6 +395,21 @@ func (o *Orchestrator) runStageWithRetries(
 			record.Err = evidenceErr.Error()
 			records = append(records, record)
 			lastErr = fmt.Errorf("stage %s attempt %d: %w", stage, attempt, evidenceErr)
+			continue
+		}
+
+		// A substantiation stage may only assess findings it was handed.
+		// Checked last: it presumes a schema-valid document with real
+		// citations, and it reads the prior stage's output, so it belongs
+		// after the checks that concern this stage's output alone.
+		ancestryErr, ancestryWarnings := validateAncestry(result.OutputPath, inputs)
+		for _, w := range ancestryWarnings {
+			o.warnf("stage %s attempt %d: %s", stage, attempt, w)
+		}
+		if ancestryErr != nil {
+			record.Err = ancestryErr.Error()
+			records = append(records, record)
+			lastErr = fmt.Errorf("stage %s attempt %d: %w", stage, attempt, ancestryErr)
 			continue
 		}
 

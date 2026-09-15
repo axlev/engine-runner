@@ -1,0 +1,62 @@
+{
+  "summary": "Two findings, ranked. The boundary write is the one that matters if real; the index counter is lower consequence.",
+  "findings": [
+    {
+      "id": "f1",
+      "title": "Page loop writes one past the caller's buffer",
+      "file": "internal/paging/paginate.go",
+      "line": 12,
+      "mechanism": "The loop bound is <= pageSize, so on any page with more than pageSize items remaining Paginate appends pageSize+1 items; the caller in listPage checks len(page) > pageSize and panics, so a full page crashes the process.",
+      "class": "classical-memory-safety",
+      "severity": "high",
+      "confidence": 0.7,
+      "evidence": [
+        {
+          "file": "internal/paging/paginate.go",
+          "start_line": 12,
+          "end_line": 12,
+          "excerpt": "for i := 0; i <= pageSize; i++ {"
+        },
+        {
+          "file": "cmd/bench/list.go",
+          "start_line": 10,
+          "end_line": 12,
+          "excerpt": "if len(page) > pageSize {\n\t\tpanic(\"paginate returned more than pageSize items\")\n\t}"
+        }
+      ],
+      "recommended_validation": {
+        "kind": "new_test",
+        "paths": [
+          "internal/paging/paginate_test.go"
+        ],
+        "description": "A table test calling Paginate with pageSize items for pageSize in 1..5 and asserting the result length equals pageSize and no panic occurs."
+      },
+      "uncertainty": "Have not confirmed whether any caller other than listPage tolerates an oversize page."
+    },
+    {
+      "id": "f2",
+      "title": "Paginate returns nil rather than an empty page at the end of the list",
+      "file": "internal/paging/paginate.go",
+      "line": 9,
+      "mechanism": "When offset equals len(items) Paginate returns nil instead of an empty slice, so a caller that distinguishes nil from empty treats the final page as an error rather than as end-of-list.",
+      "class": "error-path-lifecycle",
+      "severity": "low",
+      "confidence": 0.3,
+      "evidence": [
+        {
+          "file": "internal/paging/paginate.go",
+          "start_line": 8,
+          "end_line": 10,
+          "excerpt": "if offset >= len(items) {\n\t\treturn nil\n\t}"
+        }
+      ],
+      "recommended_validation": {
+        "kind": "new_test",
+        "paths": [
+          "internal/paging/paginate_test.go"
+        ],
+        "description": "Call Paginate with offset == len(items) and assert the result is non-nil and empty."
+      }
+    }
+  ]
+}

@@ -37,7 +37,7 @@ func TestStampEnvelopeFillsIdentityFields(t *testing.T) {
 	path := writeTemp(t, `{"findings":[]}`)
 	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 
-	if err := stampEnvelope(path, "run-7", "case-9", adapters.StageReasoner1, now); err != nil {
+	if err := stampEnvelope(path, "run-7", "case-9", adapters.StageReasoner1, "review-a/v1", now); err != nil {
 		t.Fatalf("stampEnvelope: %v", err)
 	}
 
@@ -64,7 +64,7 @@ func TestStampEnvelopeFillsIdentityFields(t *testing.T) {
 func TestStampEnvelopeOverwritesRatherThanFills(t *testing.T) {
 	path := writeTemp(t, `{"run_id":"attacker","case_id":"wrong","stage":"reasoner-3","schema_version":"bogus/v9","generated_at":"1999-01-01T00:00:00Z","findings":[]}`)
 
-	if err := stampEnvelope(path, "real-run", "real-case", adapters.StageReasoner1, time.Now()); err != nil {
+	if err := stampEnvelope(path, "real-run", "real-case", adapters.StageReasoner1, "review-a/v1", time.Now()); err != nil {
 		t.Fatalf("stampEnvelope: %v", err)
 	}
 
@@ -86,7 +86,7 @@ func TestStampEnvelopeOverwritesRatherThanFills(t *testing.T) {
 func TestStampEnvelopePreservesIntegersExactly(t *testing.T) {
 	path := writeTemp(t, `{"findings":[{"evidence":[{"file":"a.go","start_line":1000000,"end_line":1000004}],"confidence":0.6}]}`)
 
-	if err := stampEnvelope(path, "r", "c", adapters.StageReasoner1, time.Now()); err != nil {
+	if err := stampEnvelope(path, "r", "c", adapters.StageReasoner1, "review-a/v1", time.Now()); err != nil {
 		t.Fatalf("stampEnvelope: %v", err)
 	}
 
@@ -105,14 +105,17 @@ func TestStampEnvelopeRejectsUnparseableOutput(t *testing.T) {
 	// A model that wrapped its JSON in a markdown fence, or was truncated,
 	// must fail loudly here rather than be papered over.
 	path := writeTemp(t, "```json\n{\"findings\":[]}\n```")
-	if err := stampEnvelope(path, "r", "c", adapters.StageReasoner1, time.Now()); err == nil {
+	if err := stampEnvelope(path, "r", "c", adapters.StageReasoner1, "review-a/v1", time.Now()); err == nil {
 		t.Fatalf("expected an error for fenced/unparseable output")
 	}
 }
 
-func TestStampEnvelopeRejectsUnknownStage(t *testing.T) {
+// The stage name is validated by the protocol loader; what the stamp itself
+// must refuse is a missing version, which would otherwise validate against
+// nothing.
+func TestStampEnvelopeRejectsEmptySchemaVersion(t *testing.T) {
 	path := writeTemp(t, `{"findings":[]}`)
-	if err := stampEnvelope(path, "r", "c", adapters.Stage("reasoner-99"), time.Now()); err == nil {
-		t.Fatalf("expected an error for an unknown stage")
+	if err := stampEnvelope(path, "r", "c", adapters.StageReasoner1, "", time.Now()); err == nil {
+		t.Fatalf("expected an error for an empty schema_version")
 	}
 }

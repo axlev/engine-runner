@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engine-runner.internal/schemas/h1-review-b.schema.json",
+  "title": "H1 substantiation output (arm T, stage B)",
+  "description": "Stage B substantiates; it does not discover. Every assessment descends from a discovery finding by finding_id and carries discovery's mechanism verbatim in discovery_mechanism; a finding B cannot trace to discovery is a validation failure (internal/orchestrator/ancestry.go), not a prompt request. The judge (pre-registration s6) reads B's final mechanism on the highest-ranked surviving finding, so assessments are ranked and mechanism is B's last word. The RISKY verdict for T reads this stage's disposition; it is computed by the scorer, never emitted here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "case_id", "stage", "generated_at", "assessments"],
+  "properties": {
+    "schema_version": { "const": "h1-review-b/v1" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "case_id": { "type": "string", "minLength": 1 },
+    "stage": { "const": "reasoner-2" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "review_a_ref": {
+      "type": "string",
+      "description": "Checksum or identifier of the discovery output this assessment was built from."
+    },
+    "assessments": {
+      "type": "array",
+      "description": "RANKED over survivors: the CONFIRMED and NARROWED assessments come first, ordered by consequence-if-real times confidence as B now judges them; REJECTED and INCONCLUSIVE follow in any order. Array order is the rank; the judge reads the first survivor. Every finding handed over should appear once; a missing one is scored as dropped.",
+      "items": { "$ref": "#/$defs/assessment" }
+    },
+    "notes": {
+      "type": "string",
+      "description": "Anything B noticed that is NOT an assessment of a discovery finding - including something new it found while building a chain. The scorer ignores this field and the judge never sees it. Discovery is stage A's job; a new finding here does not become a finding."
+    }
+  },
+
+  "$defs": {
+    "assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["finding_id", "discovery_mechanism", "disposition", "causal_chain"],
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The discovery finding id this assessment resolves, copied exactly. Checked against the handed-over discovery output."
+        },
+        "discovery_mechanism": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Discovery's mechanism text for this finding, unchanged. Checked verbatim against the handed-over output."
+        },
+        "disposition": {
+          "type": "string",
+          "enum": ["CONFIRMED", "NARROWED", "REJECTED", "INCONCLUSIVE"],
+          "description": "CONFIRMED: discovery's mechanism stands as written. NARROWED: the condition or consequence is tighter than discovery said. REJECTED: it does not hold, for a stated positive reason. INCONCLUSIVE: could not be settled from the code. T's verdict rule counts CONFIRMED and NARROWED at severity >= medium as RISKY; the other two never do."
+        },
+        "mechanism": {
+          "type": "string",
+          "minLength": 1,
+          "description": "B's final statement of the failure mode, required for survivors. CONFIRMED: identical to discovery_mechanism (checked). NARROWED: the tighter statement, which must differ (checked). This is what the judge compares to the fixing diff."
+        },
+        "rejection_reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Required when REJECTED: the positive reason it does not hold, from the code."
+        },
+        "causal_chain": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence_ref" },
+          "description": "Ordered repository evidence from cause to effect, for every disposition - the evidence for rejecting is a chain too. Citations are checked against the snapshot."
+        },
+        "recommended_validation": {
+          "$ref": "#/$defs/recommended_validation",
+          "description": "Required for survivors. B's own, and it replaces discovery's for scoring: this field is scored by path match against the fixing commit, not by mechanism, so refining it once the chain is built is the point of brief s8."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "disposition": { "enum": ["CONFIRMED", "NARROWED"] } } },
+          "then": { "required": ["mechanism", "recommended_validation"] }
+        },
+        {
+          "if": { "properties": { "disposition": { "const": "REJECTED" } } },
+          "then": { "required": ["rejection_reason"] }
+        }
+      ]
+    },
+
+    "recommended_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "paths", "description"],
+      "description": "Same contract as discovery: a hit is a named test file or directory the fix touched or added; 'add a regression test' scores nothing.",
+      "properties": {
+        "kind": { "type": "string", "enum": ["existing_test", "new_test"] },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "evidence_ref": {
+      "type": "object",
+      "required": ["file"],
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "start_line": { "type": "integer", "minimum": 1 },
+        "end_line": { "type": "integer", "minimum": 1 },
+        "excerpt": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

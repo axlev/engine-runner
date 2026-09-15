@@ -1,0 +1,22 @@
+# Fixture protocol in arm T's SHAPE - two stages on the H1 schemas with the
+# discovery output handed to substantiation. Not arm T: the real h1-t-v1
+# carries the treatment prompts; this one exists so the schemas, the
+# envelope stamp and the handoff are exercised on the fixture adapter.
+protocol_version: fixture-h1-two-stage-v1
+
+stage_order: [reasoner-1, reasoner-2]
+
+retry_policy:
+  max_attempts: 1
+
+stages:
+  reasoner-1:
+    prompt: fixtures/prompts/placeholder.md
+    output_schema: schemas/h1-review-a.schema.json
+
+  reasoner-2:
+    prompt: fixtures/prompts/placeholder.md
+    output_schema: schemas/h1-review-b.schema.json
+    receives:
+      - from: reasoner-1
+        as: review-a.json

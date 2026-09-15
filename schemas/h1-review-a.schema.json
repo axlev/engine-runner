@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engine-runner.internal/schemas/h1-review-a.schema.json",
+  "title": "H1 discovery output (arms T and G)",
+  "description": "What a discovery reviewer reports under the H1 protocols. Its shape is driven by how the pre-registration scores, not by what reads well: the judge compares the highest-ranked finding's mechanism to the fixing diff (pre-registration s6); the scorer path-matches recommended_validation against the fixing commit with no judge call (s2); the RISKY verdict is computed by the scorer from severity, confidence and - in T - the stage-B disposition (s5). No verdict field exists here on purpose: a reviewer says what it found, the scorer says whether that is RISKY.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "case_id", "stage", "generated_at", "findings"],
+  "properties": {
+    "schema_version": { "const": "h1-review-a/v1" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "case_id": { "type": "string", "minLength": 1 },
+    "stage": { "const": "reasoner-1" },
+    "generated_at": { "type": "string", "format": "date-time" },
+
+    "summary": {
+      "type": "string",
+      "description": "Optional free-text overview of the review pass."
+    },
+
+    "findings": {
+      "type": "array",
+      "description": "RANKED. Index 0 is the finding the reviewer considers most consequential if real, ranked by consequence-if-real times confidence, not by order of discovery. Array order IS the rank - there is no separate rank field, so order and rank cannot disagree. The judge reads index 0. An empty array is a complete, expected review of a clean change; see empty_reason.",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+
+    "empty_reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Required when findings is empty: why the change carries no system-level risk, in terms of what it is confined to and which surfaces it does not touch. Roughly half of reviewed changes are clean; a stated reason is what makes an empty list a review rather than an omission."
+    }
+  },
+
+  "allOf": [
+    {
+      "if": { "properties": { "findings": { "maxItems": 0 } } },
+      "then": { "required": ["empty_reason"] }
+    }
+  ],
+
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "file", "line", "mechanism", "class", "severity", "confidence", "evidence", "recommended_validation"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier unique within this review, referenced verbatim by the substantiation stage."
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repository-relative path where the defect manifests."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The diff line or repository line where the defect manifests. Citations are checked against the snapshot."
+        },
+        "mechanism": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The failure mode in one or two sentences: WHAT goes wrong, UNDER WHAT CONDITION, WITH WHAT CONSEQUENCE. This is the text the judge compares to the fixing diff. Right function with the wrong mechanism, or a claim too vague to be wrong, earns nothing."
+        },
+        "class": {
+          "type": "string",
+          "description": "The reviewer's own assignment from the pre-registration s7 taxonomy. Reported against the evaluator's label, which is assigned before any arm runs; not scored, but it is how recall-by-class gets a per-arm view.",
+          "enum": [
+            "ordering-state-machine",
+            "cross-module-invariant",
+            "config-interaction",
+            "error-path-lifecycle",
+            "restart-upgrade",
+            "protocol-parsing",
+            "classical-memory-safety",
+            "timing-race",
+            "resource-exhaustion",
+            "other"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"],
+          "description": "Defined by consequence at runtime, not by code smell. The verdict rule gates RISKY on medium or above."
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Used by arm G's verdict rule (>= 0.6) and for the continuous risk score."
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence_ref" },
+          "description": "The repository lines forming the chain."
+        },
+        "recommended_validation": { "$ref": "#/$defs/recommended_validation" },
+        "uncertainty": {
+          "type": "string",
+          "description": "What would change the reviewer's confidence, or what was not verified."
+        }
+      }
+    },
+
+    "recommended_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "paths", "description"],
+      "description": "Scored by path match against the fixing commit, with no judge call: a hit is a named test file or directory that the fix touched or added. 'Add a regression test' scores nothing, which is why paths is required and non-empty for both kinds.",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["existing_test", "new_test"],
+          "description": "existing_test: a test in the tree exercises this path - paths name it. new_test: none does - paths name where the test would live and description states the scenario it must construct."
+        },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Repository-relative test files or directories, e.g. a topotest directory or a daemon's tests/ file. These are what the scorer matches."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "For existing_test: whether it would catch this defect as written. For new_test: the scenario the test must construct."
+        }
+      }
+    },
+
+    "evidence_ref": {
+      "type": "object",
+      "required": ["file"],
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "start_line": { "type": "integer", "minimum": 1 },
+        "end_line": { "type": "integer", "minimum": 1 },
+        "excerpt": { "type": "string" }
+      }
+    }
+  }
+}

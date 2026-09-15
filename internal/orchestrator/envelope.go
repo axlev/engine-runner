@@ -5,18 +5,52 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/axlev/engine-runner/internal/adapters"
 )
 
-// envelopeSchemaVersions maps a stage to the schema_version its output
-// document must declare.
-var envelopeSchemaVersions = map[adapters.Stage]string{
-	adapters.StageReasoner1: "review-a/v1",
-	adapters.StageReasoner2: "review-b/v1",
-	adapters.StageReasoner3: "review-c/v1",
+// schemaVersionOf reads the schema_version a stage output must declare from
+// the output schema itself - its properties.schema_version.const.
+//
+// This used to be a map keyed by STAGE NAME (reasoner-1 -> review-a/v1),
+// which was correct only while every protocol produced the same three
+// documents. H1 protocols reuse the stage names and validate against
+// different schemas: reasoner-1 under h1-g-v1 must be stamped
+// h1-review-a/v1, not review-a/v1, or it fails its own validation on the
+// first paid run. The protocol already declares which schema each stage
+// writes; the stamp follows that declaration, so the version and the
+// validator can never disagree about which document this is.
+//
+// Fails closed: a stage output schema that does not pin a schema_version
+// const is a schema authoring error, refused before any stage runs.
+func schemaVersionOf(schemaPath string) (string, error) {
+	if v, ok := schemaVersionCache.Load(schemaPath); ok {
+		return v.(string), nil
+	}
+	raw, err := os.ReadFile(schemaPath)
+	if err != nil {
+		return "", fmt.Errorf("reading output schema %s: %w", schemaPath, err)
+	}
+	var doc struct {
+		Properties struct {
+			SchemaVersion struct {
+				Const string `json:"const"`
+			} `json:"schema_version"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return "", fmt.Errorf("parsing output schema %s: %w", schemaPath, err)
+	}
+	if doc.Properties.SchemaVersion.Const == "" {
+		return "", fmt.Errorf("output schema %s does not pin properties.schema_version.const; every stage output schema must", schemaPath)
+	}
+	schemaVersionCache.Store(schemaPath, doc.Properties.SchemaVersion.Const)
+	return doc.Properties.SchemaVersion.Const, nil
 }
+
+var schemaVersionCache sync.Map
 
 // stampEnvelope fills in the identity fields of a stage's output document.
 //
@@ -37,7 +71,7 @@ var envelopeSchemaVersions = map[adapters.Stage]string{
 // its JSON in a code fence has ignored an explicit instruction, and that
 // should fail loudly and burn the retry rather than be papered over - the
 // signal belongs to whoever maintains the prompt.
-func stampEnvelope(path, runID, caseID string, stage adapters.Stage, now time.Time) error {
+func stampEnvelope(path, runID, caseID string, stage adapters.Stage, schemaVersion string, now time.Time) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("stamping envelope: reading %s: %w", path, err)
@@ -53,9 +87,8 @@ func stampEnvelope(path, runID, caseID string, stage adapters.Stage, now time.Ti
 		return fmt.Errorf("stamping envelope: %s is not a JSON object: %w", path, err)
 	}
 
-	schemaVersion, ok := envelopeSchemaVersions[stage]
-	if !ok {
-		return fmt.Errorf("stamping envelope: unknown stage %q", stage)
+	if schemaVersion == "" {
+		return fmt.Errorf("stamping envelope: no schema_version supplied for stage %q", stage)
 	}
 
 	doc["schema_version"] = schemaVersion

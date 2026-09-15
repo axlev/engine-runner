@@ -1,0 +1,5 @@
+{
+  "summary": "Clean.",
+  "findings": [],
+  "empty_reason": "The change is confined to renaming a local variable in a single function, touches no shared state, no configuration surface, and no lifecycle or error path."
+}

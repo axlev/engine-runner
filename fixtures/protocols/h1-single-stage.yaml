@@ -1,0 +1,12 @@
+# Fixture protocol in arm G's SHAPE - one discovery stage on the H1 schema.
+protocol_version: fixture-h1-single-stage-v1
+
+stage_order: [reasoner-1]
+
+retry_policy:
+  max_attempts: 1
+
+stages:
+  reasoner-1:
+    prompt: fixtures/prompts/placeholder.md
+    output_schema: schemas/h1-review-a.schema.json

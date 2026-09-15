@@ -9,19 +9,63 @@ Canonical design: [`docs/system-design.md`](docs/system-design.md).
 ## What this repository is
 
 `engine-runner` is the orchestration, isolation, validation, results, and
-scoring layer for a staged LLM code-review benchmark. It runs three
-isolated reasoning stages (discovery → evidence → adversarial
-verification) over frozen public code changes, then scores the result.
+scoring layer for an LLM code-review benchmark. It runs the isolated
+reasoning stages a frozen protocol declares (pilot-v1 declares three:
+discovery → evidence → adversarial verification) over frozen public code
+changes, then scores the result.
 
 The role that owns this repository is `coder-engine-runner`.
+
+### The target: H1
+
+**As of 2026-09-15 the goal is H1, which supersedes the staged-review
+increment question of `docs/system-design.md` §15.** An agent optimising
+for "does stage 3 earn its cost" is optimising for the wrong thing. The
+canonical, binding statement is
+[`miner/docs/h1-preregistration.md`](../miner/docs/h1-preregistration.md);
+this is a pointer, not a copy, and it loses to that file wherever they
+differ.
+
+- **H1:** on a curated cohort of C/C++ systems changes where roughly half
+  later caused a system-level escape, LLM reasoning with domain-directed
+  discovery classifies each change `RISKY` or `CLEAN` with a stated
+  system-level reason, materially above a generic single-pass reviewer and
+  a zero-LLM history baseline. Narrowed to the LLM component: deterministic
+  analysis and a domain-invariant library are not part of it.
+- **Arms:** T (opus, discovery → substantiation → recommended validation,
+  `Read/Grep/Glob`, system-aware prompt), G (opus, single stage, generic
+  prompt sharing T's calibration paragraph verbatim), H (zero-LLM history,
+  top-tercile subsystem score). Stage 3 is not run.
+- **Pass criteria, fixed:** reason match ≥ 60% `MECHANISM` on T's RISKY
+  true positives; recommended-validation hit rate ≥ 50% on the same;
+  case-level precision ≥ +15 points over *each* baseline. All three must
+  hold. Recall is reported by failure class, not criterial.
+- **Cohort 40, 20 positive / 20 negative, matched 1:1.** Precision is
+  reported conditional on that ratio.
+- **Significance is PR-level exact permutation.** Finding-level tests are
+  not used; findings cluster within PRs, and the finding-level result this
+  project once announced was retracted for exactly that.
+- **Contamination standard is the per-case probe with the Heartbleed
+  false-negative guard.** Only opus is recorded as passing it. Sonnet and
+  haiku do not; Fable and Astra are untested. An arm on a model that has
+  not passed is not admissible.
+- The verdict mapping (pre-registration §5) is deterministic and is
+  computed by the scorer, never emitted by a model: a reviewer says what
+  it found, with severity, confidence and — in T — a stage-B disposition;
+  the scorer says whether that is `RISKY`. No model-facing schema carries
+  a verdict field.
 
 ## Hard access boundaries
 
 A coding agent working here **must not**:
 
-1. **Read or write `/home/alex/data`.** That path holds raw mined data,
-   prospective bundles, oracle bundles, and production run results. No
-   coding task in this repo requires it. Use the synthetic fixtures under
+1. **Read or write `/home/alex/data`, or any `*-evaluator-only` directory
+   wherever it lives.** `/home/alex/data` holds raw mined data, the bare
+   FRR clone, and production run results; oracle bundles and materialised
+   fixes live under the miner's `output/` in `*-evaluator-only`
+   directories, and `internal/oracle/isolation_test.go` fails the build if
+   the review path so much as names one. No coding task in this repo
+   requires either. Use the synthetic fixtures under
    `fixtures/` instead.
 2. **Use a real mined case while building the runtime layer.** Everything
    in `fixtures/` is synthetic and hand-authored for exactly this reason.
@@ -251,33 +295,33 @@ milestone definitions.
 
 Known gaps, deliberately left open:
 
-- No real mined case has been run yet. `internal/boundaryvalidator` exists
-  and gates every run, but it has only ever been exercised against
-  synthetic bundles and deliberately contaminated copies of them — a real
-  miner export will likely surface rules that need tightening or relaxing.
-- The miner currently exports `miner/prospective-case/v1` — a flat root
-  with a patch-and-SHA source model — which this engine cannot ingest. The
-  decision was that the miner adapts to the engine;
-  [`docs/prospective-bundle-contract.md`](docs/prospective-bundle-contract.md)
-  is the normative target it must hit, and the migration delta is listed
-  there. Making those miner changes is a `coder-miner` job, not this
-  role's: the same context that holds the validator's heuristics should
-  not also write the export they judge, or it will teach to the test.
+- Real mined cases have run: the pilot-v1 cohort completed on three arms
+  (`docs/backlog.md` 1.3, 1.5). `internal/boundaryvalidator` gates every
+  run and is exercised on every miner export by the miner's
+  `cohort-verify` before a cohort is frozen (see "Cross-repo contract",
+  2026-09-10).
+- The miner exports the layout in
+  [`docs/prospective-bundle-contract.md`](docs/prospective-bundle-contract.md);
+  the migration delta listed there is historical. Contract changes remain
+  `coder-miner` work, not this role's: the same context that holds the
+  validator's heuristics should not also write the export they judge, or
+  it will teach to the test.
 - The claude adapter image exists and works:
   `engine-runner/adapter-claude:2.1.263` was built and smoke-tested on
   2026-09-08 and prints its version as non-root `reasoner`. The codex image
   has not been built.
-- A live stage HAS now run: on 2026-09-08 reasoner-1 completed a real
-  64-second claude call through the container, with mounts, network egress
-  and credential injection all working. It then failed writing its result
-  (the output-dir ownership bug, since fixed), and the run was interrupted
-  before reaching reasoner-2. So: one stage proven end to end, no complete
-  three-stage run yet, and resource limits still unexercised.
-- The full three-stage pipeline HAS now run live and completed, on
-  `configs/agents/haiku.yaml`, against the synthetic bundle: both handoffs
-  correct, no contamination, $0.19-$0.20 per run. `configs/agents/sonnet.yaml`
-  and `opus.yaml` exist but have never been run, and their budgets are
-  informed estimates from the haiku numbers, not measurements.
+- Live runs: the first stage was proven end to end on 2026-09-08 (a real
+  64-second claude call through the container, mounts, egress and
+  credential injection all working; its output-dir ownership failure is
+  since fixed); a full three-stage run on `configs/agents/haiku.yaml`
+  followed shortly after, both handoffs correct, no contamination; full
+  cohorts on sonnet and opus since (backlog 1.3, 1.5). Resource limits
+  remain unexercised — `runner.ResourceLimits` is declared and never
+  populated (`docs/engine-auditability.md`).
+- All arm files under `configs/agents/` have run cohorts except
+  `fable.yaml` (`Blocked`, backlog 1.6). Budgets are measured, not
+  estimated; their known failure mode — a stage killed at `max_cost_usd`,
+  once visibly and once silently behind a retry — is backlog 1.8.
 - An agent set is ONE FILE PER ARM (`-agents configs/agents/opus.yaml`), not
   a directory of per-stage files. Shared binding at the top, per-stage
   budgets below.

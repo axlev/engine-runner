@@ -1,0 +1,30 @@
+{
+  "name": "h1-two-stage",
+  "description": "Arm T shape on the H1 schemas: discovery then substantiation, one CONFIRMED high-severity finding and one REJECTED.",
+  "stages": {
+    "reasoner-1": {
+      "usage": {
+        "input_tokens": 8200,
+        "output_tokens": 950,
+        "tool_calls": 4,
+        "cost_usd": 0.041
+      },
+      "default": {
+        "kind": "success",
+        "response_path": "responses/h1/reasoner-1.json"
+      }
+    },
+    "reasoner-2": {
+      "usage": {
+        "input_tokens": 9100,
+        "output_tokens": 1100,
+        "tool_calls": 6,
+        "cost_usd": 0.052
+      },
+      "default": {
+        "kind": "success",
+        "response_path": "responses/h1/reasoner-2.json"
+      }
+    }
+  }
+}
