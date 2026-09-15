@@ -15,11 +15,16 @@
 // precision is GREATER THAN OR EQUAL TO the anticipation rate, by an unknown
 // margin, and no number derived from this oracle can close that gap.
 //
-// The same asymmetry bounds what the benchmark can claim about staging: a
-// rejected finding that matched a real fix is a PROVABLY wrong rejection,
-// while a rejection that correctly killed a non-defect is unprovable for
-// exactly the reason above. This data can demonstrate harm and cannot
-// demonstrate benefit.
+// The same asymmetry bounds what THIS ORACLE-BASED METRIC can say about
+// staging: a rejected finding that matched a real fix is a PROVABLY wrong
+// rejection, while a rejection that correctly killed a non-defect is
+// unprovable for exactly the reason above. So mechanism agreement can
+// demonstrate harm and cannot demonstrate benefit.
+//
+// That limit is the metric's, not the benchmark's. Correct suppression IS
+// measurable on the cohort's designed negatives, where no fix is needed to
+// know a surviving finding was a false positive - see specificity.go. The
+// two metrics cover different populations and neither checks the other.
 package judge
 
 import "fmt"
