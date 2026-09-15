@@ -2,6 +2,7 @@ package evaluation
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -182,7 +183,8 @@ func TestA6RiskScore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *v.RiskScore != 0.6 || *v.RiskScoreAllDiscovered != 0.6 { // high 0.75 x 0.8
+	near := func(got *float64, want float64) bool { return got != nil && math.Abs(*got-want) < 1e-9 }
+	if !near(v.RiskScore, 0.6) || !near(v.RiskScoreAllDiscovered, 0.6) { // high 0.75 x 0.8
 		t.Errorf("G: %v / %v", *v.RiskScore, *v.RiskScoreAllDiscovered)
 	}
 	b := h1ReviewBDoc(h1Assessment_("f1", "CONFIRMED", "t/x"), h1Assessment_("f3", "REJECTED"))
@@ -190,7 +192,7 @@ func TestA6RiskScore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *v.RiskScore != 0.25 || *v.RiskScoreAllDiscovered != 0.6 { // survivor f1: 1.0 x 0.5
+	if !near(v.RiskScore, 0.5) || !near(v.RiskScoreAllDiscovered, 0.6) { // survivor f1: critical 1.0 x 0.5
 		t.Errorf("T: %v / %v", *v.RiskScore, *v.RiskScoreAllDiscovered)
 	}
 	empty, _ := ScoreCase("r", "c", ArmRuleG, writeDoc(t, dir, "e.json", h1ReviewADoc()), "")
