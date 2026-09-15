@@ -1,0 +1,46 @@
+# Vendor binding for the H1 arms T and G: claude, opus-5, with search.
+#
+# One arm file for both protocols - the arm is the binding, the protocol is
+# the experiment (brief s9). h1-t-v1 runs reasoner-1 and reasoner-2;
+# h1-g-v1 runs reasoner-1 only. reasoner-3 is never run under H1
+# (pre-registration s4: stage 3 is not run) and has no entry here; the
+# loader gives it the top-level defaults, which are never exercised.
+#
+# Model: opus is the only model that passes the Heartbleed false-negative
+# contamination guard (pre-registration s8); sonnet and haiku do not, and a
+# treatment arm on an unprobed model is inadmissible.
+#
+# Tools and budgets are copied from configs/agents/opus-wide.yaml, whose
+# header records why each number is what it is; briefly, the caps are sized
+# for headroom because a stage killed at its cap produces no evidence at
+# all. reasoner-2 gets the most: it builds causal chains from the
+# repository and searches the test tree, so it is the most search-intensive
+# stage.
+#
+#   bench -protocol configs/protocols/h1-t-v1.yaml -agents configs/agents/h1-opus-wide.yaml ...
+#   bench -protocol configs/protocols/h1-g-v1.yaml -agents configs/agents/h1-opus-wide.yaml ...
+
+adapter: claude
+model: claude-opus-5
+reasoning_level: high
+
+tools:
+  - Read
+  - Grep
+  - Glob
+
+budget:
+  max_input_tokens: 12000000
+  max_output_tokens: 100000
+  max_wall_clock_seconds: 1500
+  max_tool_calls: 100
+  max_cost_usd: 6.00
+
+stages:
+  reasoner-2:
+    budget:
+      max_input_tokens: 12000000
+      max_output_tokens: 100000
+      max_wall_clock_seconds: 1800
+      max_tool_calls: 140
+      max_cost_usd: 9.00

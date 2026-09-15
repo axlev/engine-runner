@@ -1,0 +1,50 @@
+# h1-t-v1 - arm T of the H1 pre-registration: system-aware discovery, then
+# substantiation with recommended validation. Canonical definition:
+# miner/docs/h1-preregistration.md section 4; prompt design:
+# docs/h1-treatment-prompt-brief.md.
+#
+# THIS IS THE TREATMENT. prompts/h1-t-v1/reasoner-1.md is
+# prompts/h1-g-v1/reasoner-1.md plus one block between <!-- LENSES:BEGIN -->
+# and <!-- LENSES:END -->; a test strips that block and requires the rest
+# to be byte-identical to G, so the diff between the two prompts is the
+# hypothesis and nothing else. The lens text inside the block is
+# owner-authored (brief s10.4). Until the owner has replaced the
+# "<!-- owner: ... -->" placeholders the slot is empty, this arm is a
+# scaffold, and TestArmTLensSlotIsFilled skips with that message: do not
+# run it on a paid arm in that state.
+#
+# Stage B substantiates and does not discover: every assessment descends
+# from a discovery finding by finding_id, enforced at run time
+# (internal/orchestrator/ancestry.go). B's recommended_validation is the
+# one scored. The RISKY/CLEAN verdict is computed by the scorer from
+# severity and B's disposition (pre-registration section 5), never emitted.
+#
+# Staging is the accepted confound (brief s2): T substantiates, G does not,
+# and a T-over-G result is stated as prompt+staging in the results.
+#
+# Runs beside pilot-v1, never edits it. Vendor binding lives in
+# configs/agents/; the H1 arm file grants Read, Grep, Glob.
+#
+#   # smoke test
+#   bench -protocol configs/protocols/h1-t-v1.yaml -agents fixtures/agents/fixture.yaml -case-id h1-two-stage ...
+
+protocol_version: h1-t-v1
+
+stage_order: [reasoner-1, reasoner-2]
+
+retry_policy:
+  # One repair attempt on invalid structured output, as pilot-v1. The
+  # ancestry check is one of the things a repair attempt can fix.
+  max_attempts: 2
+
+stages:
+  reasoner-1:
+    prompt: prompts/h1-t-v1/reasoner-1.md
+    output_schema: schemas/h1-review-a.schema.json
+
+  reasoner-2:
+    prompt: prompts/h1-t-v1/reasoner-2.md
+    output_schema: schemas/h1-review-b.schema.json
+    receives:
+      - from: reasoner-1
+        as: review-a.json
