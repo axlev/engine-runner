@@ -111,6 +111,7 @@ type ArmReport struct {
 	ArmID         string             `json:"arm_id"`
 	Cases         int                `json:"cases"`
 	Voided        int                `json:"voided"`
+	VoidedCases   []string           `json:"voided_cases"`
 	Absent        []string           `json:"absent_cases"`
 	Counts        Counts             `json:"counts"`
 	Precision     Rate               `json:"precision"`
