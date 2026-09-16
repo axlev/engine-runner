@@ -62,6 +62,29 @@ type Label struct {
 		Title       string `json:"title"`
 		Description string `json:"description"`
 	} `json:"admission"`
+
+	// The fields below are OPTIONAL covariates the pre-registration asks
+	// to be reported as strata. They are not part of the original
+	// h1-labels/v1 contract, so a labels file may omit them - and when one
+	// does, the renderer says the stratum is unavailable rather than
+	// silently reporting a single bucket, which would read as "no
+	// variation" when it means "not recorded".
+	//
+	//   Subsystem      - A9(v), code-first subsystem.
+	//   MatchKeyUsed   - A9(vi); ["subsystem"] marks a fallback pair.
+	//   SourceWindow   - A11(iii), "2024" or "2026H1".
+	//   FixBeforeCutoff- A11(vi), fix before/after the model cutoff.
+	Subsystem       string   `json:"subsystem,omitempty"`
+	MatchKeyUsed    []string `json:"match_key_used,omitempty"`
+	SourceWindow    string   `json:"source_window,omitempty"`
+	FixBeforeCutoff *bool    `json:"fix_before_cutoff,omitempty"`
+}
+
+// IsFallbackPair reports A9(vi) fallback matching: the pair was matched on
+// subsystem alone because its (category, subsystem) cell had no counted-clean
+// negative.
+func (l Label) IsFallbackPair() bool {
+	return len(l.MatchKeyUsed) == 1 && strings.EqualFold(l.MatchKeyUsed[0], "subsystem")
 }
 
 // HistoryBaseline is history-baseline/v1, produced in the miner (Alex's

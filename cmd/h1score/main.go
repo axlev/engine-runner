@@ -17,6 +17,14 @@ import (
 )
 
 func main() {
+	// -render is a second mode: read a scored report and write the results
+	// document. Separate from scoring so the document can be regenerated
+	// from a sealed result without re-reading any run, and so nothing in
+	// it can disagree with the JSON it came from.
+	if len(os.Args) > 2 && os.Args[1] == "-render" {
+		renderMode(os.Args[2], os.Args[3:])
+		return
+	}
 	runs := flag.String("runs", "build/results", "sealed run directories, all arms")
 	labels := flag.String("labels", "", "h1-labels/v1 file (required)")
 	manifest := flag.String("cohort-manifest", "", "cohort manifest the labels were written for (required)")
@@ -141,4 +149,46 @@ func loadProbes(probesDir, verdictsDir string, cases []h1score.Label) (voided, u
 		}
 	}
 	return voided, unresolved
+}
+
+// renderMode turns a scored h1-score.json into docs/h1-results.md.
+//
+//	h1score -render <scored.json> [-labels <h1-labels.json>] [-draft] > docs/h1-results.md
+//
+// The labels file supplies the covariates the strata need; without it the
+// document reports each stratum as not recorded rather than inventing one.
+func renderMode(scoredPath string, rest []string) {
+	fs := flag.NewFlagSet("render", flag.ExitOnError)
+	labelsPath := fs.String("labels", "", "h1-labels/v1 file, for the covariate strata")
+	draft := fs.Bool("draft", false, "mark the document a draft scaffold: numbers are fixture or partial")
+	engineCommit := fs.String("engine-commit", "", "engine commit the arms ran at")
+	cohortRecords := fs.String("cohort-records", "", "cohort manifest records_sha256")
+	_ = fs.Parse(rest)
+
+	raw, err := os.ReadFile(scoredPath)
+	check(err)
+	var report h1score.Report
+	check(json.Unmarshal(raw, &report))
+	if report.SchemaVersion != h1score.SchemaVersion {
+		check(fmt.Errorf("%s is %q, want %s", scoredPath, report.SchemaVersion, h1score.SchemaVersion))
+	}
+
+	var labels []h1score.Label
+	if *labelsPath != "" {
+		lraw, err := os.ReadFile(*labelsPath)
+		check(err)
+		var l h1score.Labels
+		check(json.Unmarshal(lraw, &l))
+		labels = l.Cases
+	}
+
+	meta := h1score.RenderMeta{
+		SourceFile:     filepath.Base(scoredPath),
+		EngineCommit:   *engineCommit,
+		CohortRecords:  *cohortRecords,
+		Draft:          *draft,
+		ProtocolHashes: map[string]string{},
+		PromptHashes:   map[string]string{},
+	}
+	fmt.Print(h1score.Render(report, labels, meta))
 }
