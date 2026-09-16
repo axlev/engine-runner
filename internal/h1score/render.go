@@ -201,15 +201,19 @@ func renderArms(w func(string, ...any), r Report) {
 func renderPairwise(w func(string, ...any), r Report) {
 	w("## Pairwise")
 	w("")
-	w("| Comparison | Common | Discordant | Δ precision | p (1-sided) | p (2-sided) | Δ recall | p (1-sided) | p (2-sided) |")
-	w("|---|---|---|---|---|---|---|---|---|")
+	w("| Comparison | Subset | Common | Discordant | Δ precision | p (1-sided) | p (2-sided) | Δ recall | p (1-sided) | p (2-sided) |")
+	w("|---|---|---|---|---|---|---|---|---|---|")
 	for _, p := range r.Pairwise {
+		subset := p.Subset
+		if subset == "" {
+			subset = "all scored cases"
+		}
 		if p.Absent != "" {
-			w("| %s | — | — | absent (%s) | | | | | |", p.Comparison, p.Absent)
+			w("| %s | %s | — | — | absent (%s) | | | | | |", p.Comparison, subset, p.Absent)
 			continue
 		}
-		w("| %s | %d | %d | %s | %s | %s | %s | %s | %s |",
-			p.Comparison, p.CommonCases, p.Discordant,
+		w("| %s | %s | %d | %d | %s | %s | %s | %s | %s | %s |",
+			p.Comparison, subset, p.CommonCases, p.Discordant,
 			floatCell(p.DeltaPrecision, "%+.3f"),
 			floatCell(p.PPrecision.OneSided, "%.4f"), floatCell(p.PPrecision.TwoSided, "%.4f"),
 			floatCell(p.DeltaRecall, "%+.3f"),
@@ -313,10 +317,41 @@ func renderRecallByClass(w func(string, ...any), r Report) {
 
 // stratum describes one reported breakdown and how to bucket a case.
 type stratum struct {
-	title    string
-	note     string
-	bucket   func(Label) string // "" means this case has no value recorded
-	required string             // the label field that must be present
+	title     string
+	note      string
+	bucket    func(Label) string // "" means this case has no value recorded
+	required  string             // the label field that must be present
+	dimension string             // key into ArmReport.Strata
+}
+
+// renderArmStrata prints per-arm precision and recall within one
+// dimension's buckets, when the scorer computed them.
+func renderArmStrata(w func(string, ...any), r Report, dimension string) {
+	type row struct {
+		arm, bucket string
+		s           Stratum
+	}
+	var rows []row
+	for _, arm := range []string{ArmT, ArmG, ArmH} {
+		byBucket, ok := r.Arms[arm].Strata[dimension]
+		if !ok {
+			continue
+		}
+		for _, b := range sortedKeys(byBucket) {
+			rows = append(rows, row{arm, b, byBucket[b]})
+		}
+	}
+	if len(rows) == 0 {
+		return
+	}
+	w("| Arm | Bucket | Cases | TP | FP | FN | TN | Precision | Recall |")
+	w("|---|---|---|---|---|---|---|---|---|")
+	for _, x := range rows {
+		w("| %s | %s | %d | %d | %d | %d | %d | %s | %s |",
+			x.arm, x.bucket, x.s.Cases, x.s.Counts.TP, x.s.Counts.FP, x.s.Counts.FN, x.s.Counts.TN,
+			rateCell(x.s.Precision), rateCell(x.s.Recall))
+	}
+	w("")
 }
 
 func renderStrata(w func(string, ...any), r Report, labels []Label) {
@@ -324,33 +359,37 @@ func renderStrata(w func(string, ...any), r Report, labels []Label) {
 	w("")
 	strata := []stratum{
 		{
-			title:    "Admission of title/description",
-			required: "admission.description",
-			bucket:   func(l Label) string { return l.Admission.Description },
+			title:     "Admission of title/description",
+			dimension: "admission_description",
+			required:  "admission.description",
+			bucket:    func(l Label) string { return l.Admission.Description },
 		},
 		{
-			title:    "Fallback pairs (A9(vi))",
-			note:     "A fallback pair was matched on subsystem alone, so the stateful category is unbalanced within the pair on a dimension the arms can see in the diff. §2's pairwise deltas are to be given with and without these.",
-			required: "match_key_used",
+			title:     "Fallback pairs (A9(vi))",
+			dimension: "fallback_pair",
+			note:      "A fallback pair was matched on subsystem alone, so the stateful category is unbalanced within the pair on a dimension the arms can see in the diff. §2's pairwise deltas are to be given with and without these.",
+			required:  "fallback_pair (or match_key_used)",
 			bucket: func(l Label) string {
-				if len(l.MatchKeyUsed) == 0 {
+				if !l.HasFallbackInfo() {
 					return ""
 				}
 				if l.IsFallbackPair() {
-					return "fallback (subsystem only)"
+					return "fallback"
 				}
-				return "matched on " + strings.Join(l.MatchKeyUsed, "+")
+				return "fully matched"
 			},
 		},
 		{
-			title:    "Source window (A11(iii))",
-			required: "source_window",
-			bucket:   func(l Label) string { return l.SourceWindow },
+			title:     "Source window (A11(iii))",
+			dimension: "source",
+			required:  "source (or source_window)",
+			bucket:    func(l Label) string { return l.SourceOf() },
 		},
 		{
-			title:    "Fix before/after model cutoff (A11(vi))",
-			note:     "Recorded as a covariate per positive; the model cutoff is May 2026.",
-			required: "fix_before_cutoff",
+			title:     "Fix before/after model cutoff (A11(vi))",
+			dimension: "fix_before_cutoff",
+			note:      "Recorded as a covariate per positive; the model cutoff is May 2026.",
+			required:  "fix_before_cutoff",
 			bucket: func(l Label) string {
 				if l.FixBeforeCutoff == nil {
 					return ""
@@ -362,9 +401,10 @@ func renderStrata(w func(string, ...any), r Report, labels []Label) {
 			},
 		},
 		{
-			title:    "Subsystem (A9(v))",
-			required: "subsystem",
-			bucket:   func(l Label) string { return l.Subsystem },
+			title:     "Subsystem (A9(v))",
+			dimension: "subsystem",
+			required:  "subsystem",
+			bucket:    func(l Label) string { return l.Subsystem },
 		},
 	}
 
@@ -408,15 +448,7 @@ func renderStrata(w func(string, ...any), r Report, labels []Label) {
 			w("| %s | %d |", k, counts[k])
 		}
 		w("")
-		if s.required == "admission.description" {
-			w("*Per-arm precision and recall within these buckets are in the scored JSON")
-			w("under `arms.<arm>.by_admission_description`.*")
-		} else {
-			w("*Case counts only. Per-arm precision and recall within these buckets are")
-			w("not computed yet: the scorer strata only `admission.description`. Extending")
-			w("it is a scorer change, not a rendering one.*")
-		}
-		w("")
+		renderArmStrata(w, r, s.dimension)
 	}
 }
 

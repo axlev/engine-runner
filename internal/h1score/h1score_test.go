@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -342,5 +343,101 @@ func TestProbeVoidsForAllArmsAndFlagsUnresolved(t *testing.T) {
 		Verdicts: map[string]map[string]CaseVerdict{"T": T, "G": G}, Threshold: 15})
 	if r2.Provisional {
 		t.Error("no unresolved probes must not be provisional")
+	}
+}
+
+// A9(vi): the pairwise deltas must be reported with AND without fallback
+// pairs, and per-arm rates must break down by every recorded covariate.
+func TestStrataAndFallbackPairwise(t *testing.T) {
+	l := cohort(3) // posa/nega, posb/negb, posc/negc
+	yes, no := true, false
+	for i := range l.Cases {
+		l.Cases[i].Subsystem = "bgpd"
+		l.Cases[i].Source = "2026H1"
+		if strings.HasSuffix(l.Cases[i].CaseID, "a") {
+			l.Cases[i].FallbackPair = &yes
+			l.Cases[i].FixBeforeCutoff = &yes
+		} else {
+			l.Cases[i].FallbackPair = &no
+			l.Cases[i].FixBeforeCutoff = &no
+		}
+	}
+	// T is right on the non-fallback pairs and wrong on the fallback one.
+	T := verdicts(map[string]bool{"posa": false, "nega": true, "posb": true, "negb": false, "posc": true, "negc": false})
+	G := verdicts(map[string]bool{"posa": true, "nega": true, "posb": false, "negb": true, "posc": false, "negc": true})
+	r, err := Score(Options{Labels: l, ArmIDs: map[string]string{"T": "t", "G": "g"},
+		Verdicts: map[string]map[string]CaseVerdict{"T": T, "G": G}, Threshold: 15})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Every recorded dimension is present per arm; none is invented.
+	strata := r.Arms["T"].Strata
+	for _, dim := range []string{"admission_description", "subsystem", "source", "fallback_pair", "fix_before_cutoff"} {
+		if _, ok := strata[dim]; !ok {
+			t.Errorf("missing stratum dimension %q", dim)
+		}
+	}
+	fb := strata["fallback_pair"]
+	if fb["fallback"].Cases != 2 || fb["fully matched"].Cases != 4 {
+		t.Errorf("fallback buckets: %+v", fb)
+	}
+
+	// Both readings of each pairwise comparison are present and differ.
+	var all, excl *Pairwise
+	for i := range r.Pairwise {
+		if r.Pairwise[i].Comparison != "T-G" {
+			continue
+		}
+		if r.Pairwise[i].Subset == "" {
+			all = &r.Pairwise[i]
+		} else {
+			excl = &r.Pairwise[i]
+		}
+	}
+	if all == nil || excl == nil {
+		t.Fatalf("want T-G with and without fallback pairs, got %d entries", len(r.Pairwise))
+	}
+	if excl.CommonCases != 4 || all.CommonCases != 6 {
+		t.Errorf("subset sizes: all=%d excluding=%d", all.CommonCases, excl.CommonCases)
+	}
+	if all.DeltaPrecision != nil && excl.DeltaPrecision != nil && *all.DeltaPrecision == *excl.DeltaPrecision {
+		t.Error("the fallback pair was constructed to move the delta; the two readings should differ")
+	}
+}
+
+// Without fallback information the second reading must NOT appear: a
+// duplicate of the first would read as corroboration.
+func TestNoFallbackSubsetWhenLabelsDoNotSayAndNoneAreFallback(t *testing.T) {
+	l := cohort(2)
+	T := verdicts(map[string]bool{"posa": true, "nega": false, "posb": true, "negb": false})
+	r, err := Score(Options{Labels: l, ArmIDs: map[string]string{"T": "t", "G": "g"},
+		Verdicts: map[string]map[string]CaseVerdict{"T": T, "G": T}, Threshold: 15})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range r.Pairwise {
+		if p.Subset != "" {
+			t.Errorf("no fallback info recorded, so no subset reading should appear: %+v", p)
+		}
+	}
+	if _, ok := r.Arms["T"].Strata["fallback_pair"]; ok {
+		t.Error("fallback stratum must be absent when the labels do not carry it")
+	}
+
+	// All-fully-matched is also not a subset worth reporting.
+	no := false
+	for i := range l.Cases {
+		l.Cases[i].FallbackPair = &no
+	}
+	r2, _ := Score(Options{Labels: l, ArmIDs: map[string]string{"T": "t", "G": "g"},
+		Verdicts: map[string]map[string]CaseVerdict{"T": T, "G": T}, Threshold: 15})
+	for _, p := range r2.Pairwise {
+		if p.Subset != "" {
+			t.Error("with no fallback pairs, the excluding-fallback reading is the same data and must not be duplicated")
+		}
+	}
+	if len(r2.Arms["T"].Strata["fallback_pair"]) != 1 {
+		t.Errorf("the stratum itself is still recorded: %+v", r2.Arms["T"].Strata["fallback_pair"])
 	}
 }

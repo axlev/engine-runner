@@ -74,17 +74,75 @@ type Label struct {
 	//   MatchKeyUsed   - A9(vi); ["subsystem"] marks a fallback pair.
 	//   SourceWindow   - A11(iii), "2024" or "2026H1".
 	//   FixBeforeCutoff- A11(vi), fix before/after the model cutoff.
-	Subsystem       string   `json:"subsystem,omitempty"`
-	MatchKeyUsed    []string `json:"match_key_used,omitempty"`
-	SourceWindow    string   `json:"source_window,omitempty"`
-	FixBeforeCutoff *bool    `json:"fix_before_cutoff,omitempty"`
+	Subsystem    string   `json:"subsystem,omitempty"`
+	MatchKeyUsed []string `json:"match_key_used,omitempty"`
+	// FallbackPair is the evaluator's own flag. Both spellings are
+	// accepted: the flag when the labels file states it, and otherwise
+	// derived from match_key_used. Tolerating both means a labels file
+	// written to either shape scores identically, rather than silently
+	// losing the stratum because of a field name.
+	FallbackPair *bool `json:"fallback_pair,omitempty"`
+	// Source / SourceWindow: A11(iii)'s window, "2024" or "2026H1".
+	Source          string `json:"source,omitempty"`
+	SourceWindow    string `json:"source_window,omitempty"`
+	FixBeforeCutoff *bool  `json:"fix_before_cutoff,omitempty"`
+}
+
+// SourceOf returns the A11(iii) window under either field name.
+func (l Label) SourceOf() string {
+	if l.Source != "" {
+		return l.Source
+	}
+	return l.SourceWindow
 }
 
 // IsFallbackPair reports A9(vi) fallback matching: the pair was matched on
-// subsystem alone because its (category, subsystem) cell had no counted-clean
-// negative.
+// subsystem alone because its (category, subsystem) cell had no
+// counted-clean negative. The explicit flag wins when present.
 func (l Label) IsFallbackPair() bool {
+	if l.FallbackPair != nil {
+		return *l.FallbackPair
+	}
 	return len(l.MatchKeyUsed) == 1 && strings.EqualFold(l.MatchKeyUsed[0], "subsystem")
+}
+
+// HasFallbackInfo reports whether the labels file said anything about
+// fallback matching at all. Without it the stratum is "not recorded", which
+// is not the same as "no fallback pairs".
+func (l Label) HasFallbackInfo() bool {
+	return l.FallbackPair != nil || len(l.MatchKeyUsed) > 0
+}
+
+// StrataDimensions are the covariate breakdowns the pre-registration asks
+// to be reported. Each returns "" for a case whose labels do not carry the
+// covariate, and such cases are left out of that dimension entirely rather
+// than bucketed as unknown - a bucket of unknowns invites reading it as a
+// category.
+var StrataDimensions = []struct {
+	Name   string
+	Bucket func(Label) string
+}{
+	{"admission_description", func(l Label) string { return l.Admission.Description }},
+	{"subsystem", func(l Label) string { return l.Subsystem }},
+	{"source", func(l Label) string { return l.SourceOf() }},
+	{"fallback_pair", func(l Label) string {
+		if !l.HasFallbackInfo() {
+			return ""
+		}
+		if l.IsFallbackPair() {
+			return "fallback"
+		}
+		return "fully matched"
+	}},
+	{"fix_before_cutoff", func(l Label) string {
+		if l.FixBeforeCutoff == nil {
+			return ""
+		}
+		if *l.FixBeforeCutoff {
+			return "before cutoff"
+		}
+		return "after cutoff"
+	}},
 }
 
 // HistoryBaseline is history-baseline/v1, produced in the miner (Alex's
@@ -153,8 +211,12 @@ type ArmReport struct {
 	HitRate       *HitRate          `json:"recommended_validation_hit_rate,omitempty"`
 	// VsChance is A8\'s per-arm test: case-level Fisher exact, two-sided, on
 	// the arm\'s RISKY/CLEAN x positive/negative table.
-	VsChance *VsChance          `json:"vs_chance"`
-	Strata   map[string]Stratum `json:"by_admission_description"`
+	VsChance *VsChance `json:"vs_chance"`
+	// Strata are per-arm rates within each covariate bucket, keyed
+	// dimension -> bucket. A dimension the labels do not carry is absent
+	// from the map entirely, so a reader cannot mistake "not recorded" for
+	// "one bucket".
+	Strata map[string]map[string]Stratum `json:"strata"`
 }
 
 type VsChance struct {
@@ -224,7 +286,13 @@ type HitCase struct {
 }
 
 type Pairwise struct {
-	Comparison     string   `json:"comparison"`
+	Comparison string `json:"comparison"`
+	// Subset names the case set this comparison ran over. "" is every
+	// scored case; "excluding fallback pairs" is A9(vi)'s second reading,
+	// which the pre-registration requires alongside the first because
+	// within a fallback pair the stateful category is unbalanced on a
+	// dimension the arms can see in the diff.
+	Subset         string   `json:"subset,omitempty"`
 	CommonCases    int      `json:"common_cases"`
 	Discordant     int      `json:"discordant_cases"`
 	DeltaPrecision *float64 `json:"delta_precision"`
@@ -560,12 +628,11 @@ func armReport(arm, armID string, labels map[string]Label, verdicts map[string]C
 	if voided == nil {
 		voided = []string{}
 	}
-	r := ArmReport{Arm: arm, ArmID: armID, Voided: len(voided), VoidedCases: voided, RecallByClass: map[string]Rate{}, Strata: map[string]Stratum{}, Absent: []string{}}
+	r := ArmReport{Arm: arm, ArmID: armID, Voided: len(voided), VoidedCases: voided, RecallByClass: map[string]Rate{}, Strata: map[string]map[string]Stratum{}, Absent: []string{}}
 	r.Counts, r.Cases = countsFor(labels, verdicts, nil)
 	r.Precision, r.Recall = precisionOf(r.Counts), recallOf(r.Counts)
 	r.VsChance = vsChance(r.Counts)
 	classes := map[string]bool{}
-	strata := map[string]bool{}
 	for id, l := range labels {
 		if _, ok := verdicts[id]; !ok {
 			r.Absent = append(r.Absent, id)
@@ -573,16 +640,29 @@ func armReport(arm, armID string, labels map[string]Label, verdicts map[string]C
 		if l.Label == "positive" {
 			classes[l.Class] = true
 		}
-		strata[l.Admission.Description] = true
 	}
 	sort.Strings(r.Absent)
 	for cls := range classes {
 		c, _ := countsFor(labels, verdicts, func(l Label) bool { return l.Label == "positive" && l.Class == cls })
 		r.RecallByClass[cls] = recallOf(c)
 	}
-	for s := range strata {
-		c, n := countsFor(labels, verdicts, func(l Label) bool { return l.Admission.Description == s })
-		r.Strata[s] = Stratum{Cases: n, Counts: c, Precision: precisionOf(c), Recall: recallOf(c)}
+	for _, dim := range StrataDimensions {
+		buckets := map[string]bool{}
+		for _, l := range labels {
+			if v := dim.Bucket(l); v != "" {
+				buckets[v] = true
+			}
+		}
+		if len(buckets) == 0 {
+			continue // not recorded; absent from the map entirely
+		}
+		byBucket := map[string]Stratum{}
+		for b := range buckets {
+			bucket := b
+			c, n := countsFor(labels, verdicts, func(l Label) bool { return dim.Bucket(l) == bucket })
+			byBucket[bucket] = Stratum{Cases: n, Counts: c, Precision: precisionOf(c), Recall: recallOf(c)}
+		}
+		r.Strata[dim.Name] = byBucket
 	}
 	if withHits {
 		h := &HitRate{PerCase: []HitCase{}}
@@ -657,7 +737,11 @@ func precRec(cases []caseOutcome, useA []bool) (prec, rec float64, precOK, recOK
 // test from internal/judge's (which relabels which PRs are clean, an
 // unpaired design) and is not interchangeable with it.
 func pairwise(name string, labels map[string]Label, treat, base map[string]CaseVerdict, threshold float64) Pairwise {
-	pw := Pairwise{Comparison: name, Threshold: threshold}
+	return pairwiseSubset(name, "", labels, treat, base, threshold)
+}
+
+func pairwiseSubset(name, subset string, labels map[string]Label, treat, base map[string]CaseVerdict, threshold float64) Pairwise {
+	pw := Pairwise{Comparison: name, Subset: subset, Threshold: threshold}
 	var cases []caseOutcome
 	ids := make([]string, 0, len(labels))
 	for id := range labels {
@@ -926,6 +1010,29 @@ func Score(o Options) (Report, error) {
 
 	r.Pairwise = append(r.Pairwise, pairwise("T-G", labels, o.Verdicts[ArmT], o.Verdicts[ArmG], o.Threshold))
 	r.Pairwise = append(r.Pairwise, pairwise("T-H", labels, o.Verdicts[ArmT], o.History, o.Threshold))
+
+	// A9(vi): "§2's pairwise deltas are given with and without them."
+	// Reported only when the labels actually say which pairs are fallback;
+	// otherwise the second reading would silently duplicate the first and
+	// look like corroboration.
+	anyFallbackInfo, anyFallback := false, false
+	fullyMatched := map[string]Label{}
+	for id, l := range labels {
+		if l.HasFallbackInfo() {
+			anyFallbackInfo = true
+			if l.IsFallbackPair() {
+				anyFallback = true
+				continue
+			}
+		}
+		fullyMatched[id] = l
+	}
+	if anyFallbackInfo && anyFallback {
+		const subset = "excluding fallback pairs (A9(vi))"
+		r.Pairwise = append(r.Pairwise,
+			pairwiseSubset("T-G", subset, fullyMatched, o.Verdicts[ArmT], o.Verdicts[ArmG], o.Threshold),
+			pairwiseSubset("T-H", subset, fullyMatched, o.Verdicts[ArmT], o.History, o.Threshold))
+	}
 	return r, nil
 }
 

@@ -3,7 +3,7 @@
 > **DRAFT SCAFFOLD.** Rendered before the arms ran; every number below is
 > from fixture or partial data and means nothing yet.
 
-Cohort 6 cases (3 positive, 3 negative). Generated from `h1-score.json` by `h1score -render`.
+Cohort 40 cases (20 positive, 20 negative). Generated from `h1-score.json` by `h1score -render`.
 
 ## Pre-registered criteria (§2)
 
@@ -13,12 +13,12 @@ All three must hold. Recall is reported, not criterial.
 |---|---|---|---|
 | Reason match, treatment RISKY true positives | ≥ 60% MECHANISM | absent (judge pass has not run) | cannot be evaluated |
 | Recommended-validation hit rate (T) | ≥ 50% | absent (no RISKY true positive with fixing paths) | cannot be evaluated |
-| Case-level precision, T-G | ≥ +15 points | absent | cannot be evaluated |
+| Case-level precision, T-G | ≥ +15 points | absent (no case scored by both arms) | cannot be evaluated |
 | Case-level precision, T-H | ≥ +15 points | absent (no case scored by both arms) | cannot be evaluated |
 
 Precision is reported conditional on the 1:1 positive/negative ratio.
 
-**Underpowered at this cohort size:** with 3 positives, a +15-point recall or
+**Underpowered at this cohort size:** with 20 positives, a +15-point recall or
 reason-match difference cannot reach significance. Those are reported as
 "consistent with H1, underpowered", never as a pass.
 
@@ -26,20 +26,23 @@ reason-match difference cannot reach significance. Those are reported as
 
 | Arm | Protocol | Cases | TP | FP | FN | TN | Precision | Recall | vs chance (Fisher, 2-sided) |
 |---|---|---|---|---|---|---|---|---|---|
-| T | `h1-t-v1` | 6 | 0 | 0 | 3 | 3 | absent (no case was called RISKY) | 0.000 (0/3) | 1.0000 |
-| G | `h1-g-v1` | 6 | 0 | 0 | 3 | 3 | absent (no case was called RISKY) | 0.000 (0/3) | 1.0000 |
+| T | `h1-t-v1` | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) | absent (no cases scored) |
+| G | `h1-g-v1` | 40 | 0 | 0 | 20 | 20 | absent (no case was called RISKY) | 0.000 (0/20) | 1.0000 |
 | H | `history-baseline/v1` | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) | absent (no cases scored) |
 
-Arm H did not score 6 case(s): case-185dad450d340655, case-2ae3385ba3c3e272, case-65e6253e931e5bf1, case-81abc025b64dea3a, case-9bc74940b6b1d813, case-e536d8e5bf2d889e.
+Arm T did not score 40 case(s): case-08467610b3eb838e, case-185dad450d340655, case-1b8adae03a329291, case-1bdbd662589b27ae, case-1d42ac76e342fe5f, case-2699efb20edbe533, case-28152325a9efbe56, case-281ffc6ace1cb130, case-2d5d8ef4a5cb1c75, case-33109a63a9cf87e8, case-384c8a19f7a29646, case-492381809029295b, case-50b1f68452ec9cb3, case-520bcfda15744771, case-6045b30e4b49983b, case-626d77ae4636bd31, case-633a3d116493c2d3, case-74a3e8b1d531640c, case-7c1ef13dfbb857a7, case-896b7e1f79c15282, case-904c6aef5524ba0e, case-96dd77c010ac73a8, case-9a6a8ab07aeba591, case-a9e6ee22c6945695, case-b1d011d5c7c060c2, case-b2de29894c47c0f6, case-b3f4e25b4a68c80a, case-b7a24f0031af12c8, case-bbb4b0dad37eccb2, case-c28b772309d357dc, case-c49c264bde360ca1, case-c782e478705d4fab, case-d13c49c44610890a, case-d63ac8dc5b36c28e, case-db44abbf39439b31, case-e536d8e5bf2d889e, case-ed5a1593c41ff315, case-f4bcd1c1e10c94b6, case-f73ff79c3d818a46, case-fccc0e0e7de3e73d.
+Arm H did not score 40 case(s): case-08467610b3eb838e, case-185dad450d340655, case-1b8adae03a329291, case-1bdbd662589b27ae, case-1d42ac76e342fe5f, case-2699efb20edbe533, case-28152325a9efbe56, case-281ffc6ace1cb130, case-2d5d8ef4a5cb1c75, case-33109a63a9cf87e8, case-384c8a19f7a29646, case-492381809029295b, case-50b1f68452ec9cb3, case-520bcfda15744771, case-6045b30e4b49983b, case-626d77ae4636bd31, case-633a3d116493c2d3, case-74a3e8b1d531640c, case-7c1ef13dfbb857a7, case-896b7e1f79c15282, case-904c6aef5524ba0e, case-96dd77c010ac73a8, case-9a6a8ab07aeba591, case-a9e6ee22c6945695, case-b1d011d5c7c060c2, case-b2de29894c47c0f6, case-b3f4e25b4a68c80a, case-b7a24f0031af12c8, case-bbb4b0dad37eccb2, case-c28b772309d357dc, case-c49c264bde360ca1, case-c782e478705d4fab, case-d13c49c44610890a, case-d63ac8dc5b36c28e, case-db44abbf39439b31, case-e536d8e5bf2d889e, case-ed5a1593c41ff315, case-f4bcd1c1e10c94b6, case-f73ff79c3d818a46, case-fccc0e0e7de3e73d.
 
 ## Pairwise
 
-| Comparison | Common | Discordant | Δ precision | p (1-sided) | p (2-sided) | Δ recall | p (1-sided) | p (2-sided) |
-|---|---|---|---|---|---|---|---|---|
-| T-G | 6 | 0 | absent | absent | absent | +0.000 | 1.0000 | 1.0000 |
-| T-H | — | — | absent (no case scored by both arms) | | | | | |
+| Comparison | Subset | Common | Discordant | Δ precision | p (1-sided) | p (2-sided) | Δ recall | p (1-sided) | p (2-sided) |
+|---|---|---|---|---|---|---|---|---|---|
+| T-G | all scored cases | — | — | absent (no case scored by both arms) | | | | | |
+| T-H | all scored cases | — | — | absent (no case scored by both arms) | | | | | |
+| T-G | excluding fallback pairs (A9(vi)) | — | — | absent (no case scored by both arms) | | | | | |
+| T-H | excluding fallback pairs (A9(vi)) | — | — | absent (no case scored by both arms) | | | | | |
 
-Test: exact enumeration of 2^discordant arm swaps.
+Test: .
 
 ## Recommended-validation hit rate
 
@@ -60,7 +63,7 @@ Until it runs, H1 has not been evaluated, whatever the other numbers say.
 
 | Class | T | G | H |
 |---|---|---|---|
-| `config-interaction` | 0.000 (0/3) | 0.000 (0/3) | absent (no positives) |
+| `config-interaction` | absent (no positives) | 0.000 (0/20) | absent (no positives) |
 
 Reported, not criterial. The pre-registration expects T to do worst on
 `timing-race` and `resource-exhaustion`, which are deliberately not lensed.
@@ -71,10 +74,13 @@ Reported, not criterial. The pre-registration expects T to do worst on
 
 | Bucket | Cases |
 |---|---|
-| admitted | 6 |
+| admitted | 40 |
 
-*Per-arm precision and recall within these buckets are in the scored JSON
-under `arms.<arm>.by_admission_description`.*
+| Arm | Bucket | Cases | TP | FP | FN | TN | Precision | Recall |
+|---|---|---|---|---|---|---|---|---|
+| T | admitted | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
+| G | admitted | 40 | 0 | 0 | 20 | 20 | absent (no case was called RISKY) | 0.000 (0/20) |
+| H | admitted | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
 
 ### Fallback pairs (A9(vi))
 
@@ -82,22 +88,33 @@ A fallback pair was matched on subsystem alone, so the stateful category is unba
 
 | Bucket | Cases |
 |---|---|
-| fallback (subsystem only) | 2 |
-| matched on category+subsystem | 4 |
+| fallback | 6 |
+| fully matched | 34 |
 
-*Case counts only. Per-arm precision and recall within these buckets are
-not computed yet: the scorer strata only `admission.description`. Extending
-it is a scorer change, not a rendering one.*
+| Arm | Bucket | Cases | TP | FP | FN | TN | Precision | Recall |
+|---|---|---|---|---|---|---|---|---|
+| T | fallback | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
+| T | fully matched | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
+| G | fallback | 6 | 0 | 0 | 3 | 3 | absent (no case was called RISKY) | 0.000 (0/3) |
+| G | fully matched | 34 | 0 | 0 | 17 | 17 | absent (no case was called RISKY) | 0.000 (0/17) |
+| H | fallback | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
+| H | fully matched | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
 
 ### Source window (A11(iii))
 
 | Bucket | Cases |
 |---|---|
-| 2026H1 | 6 |
+| 2024 | 16 |
+| 2026H1 | 24 |
 
-*Case counts only. Per-arm precision and recall within these buckets are
-not computed yet: the scorer strata only `admission.description`. Extending
-it is a scorer change, not a rendering one.*
+| Arm | Bucket | Cases | TP | FP | FN | TN | Precision | Recall |
+|---|---|---|---|---|---|---|---|---|
+| T | 2024 | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
+| T | 2026H1 | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
+| G | 2024 | 16 | 0 | 0 | 8 | 8 | absent (no case was called RISKY) | 0.000 (0/8) |
+| G | 2026H1 | 24 | 0 | 0 | 12 | 12 | absent (no case was called RISKY) | 0.000 (0/12) |
+| H | 2024 | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
+| H | 2026H1 | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
 
 ### Fix before/after model cutoff (A11(vi))
 
@@ -105,22 +122,33 @@ Recorded as a covariate per positive; the model cutoff is May 2026.
 
 | Bucket | Cases |
 |---|---|
-| fix after cutoff | 4 |
-| fix before cutoff | 2 |
+| fix after cutoff | 30 |
+| fix before cutoff | 10 |
 
-*Case counts only. Per-arm precision and recall within these buckets are
-not computed yet: the scorer strata only `admission.description`. Extending
-it is a scorer change, not a rendering one.*
+| Arm | Bucket | Cases | TP | FP | FN | TN | Precision | Recall |
+|---|---|---|---|---|---|---|---|---|
+| T | after cutoff | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
+| T | before cutoff | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
+| G | after cutoff | 30 | 0 | 0 | 10 | 20 | absent (no case was called RISKY) | 0.000 (0/10) |
+| G | before cutoff | 10 | 0 | 0 | 10 | 0 | absent (no case was called RISKY) | 0.000 (0/10) |
+| H | after cutoff | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
+| H | before cutoff | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
 
 ### Subsystem (A9(v))
 
 | Bucket | Cases |
 |---|---|
-| bgpd | 6 |
+| bgpd | 20 |
+| ospfd | 20 |
 
-*Case counts only. Per-arm precision and recall within these buckets are
-not computed yet: the scorer strata only `admission.description`. Extending
-it is a scorer change, not a rendering one.*
+| Arm | Bucket | Cases | TP | FP | FN | TN | Precision | Recall |
+|---|---|---|---|---|---|---|---|---|
+| T | bgpd | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
+| T | ospfd | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
+| G | bgpd | 20 | 0 | 0 | 10 | 10 | absent (no case was called RISKY) | 0.000 (0/10) |
+| G | ospfd | 20 | 0 | 0 | 10 | 10 | absent (no case was called RISKY) | 0.000 (0/10) |
+| H | bgpd | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
+| H | ospfd | 0 | 0 | 0 | 0 | 0 | absent (no case was called RISKY) | absent (no positives) |
 
 ## Excluded cases
 
@@ -134,11 +162,11 @@ Figures are the CLI's ESTIMATE of equivalent API cost under a subscription token
 
 | Artifact | Value |
 |---|---|
-| engine commit | `c6a8d14` |
-| cohort `records_sha256` | `provisional-d645e854` |
-| input `cohort_manifest_sha256` | `b5c3ea8cb853e62fe88d91de20cd768c81038ded5e7cb342966b4378046b2b61` |
-| input `labels_sha256` | `8caaa39034c89cb4ccd7bd4bb4ddc57fa7f0fe455e69b34985728e089275574a` |
-| input `runs_root` | `/tmp/claude-1000/-home-alex-repos-engine-runner/9749265c-8488-4ebc-b293-c4c4410eb27c/scratchpad/batch` |
+| engine commit | `1219b5a` |
+| cohort `records_sha256` | `b2279b9c` |
+| input `cohort_manifest_sha256` | `9b0d8e6524d634101eb765ba77066b86958ae242ea166c3cea6caa7f276bccb0` |
+| input `labels_sha256` | `1cf01f86a3dbb723588d0856326521ab0aefd410492e0c94812f273c3f792703` |
+| input `runs_root` | `/tmp/claude-1000/-home-alex-repos-engine-runner/9749265c-8488-4ebc-b293-c4c4410eb27c/scratchpad/dryrun40` |
 
 ### Rules as applied
 

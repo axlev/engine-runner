@@ -81,7 +81,7 @@ func TestRenderSaysNotRecordedRatherThanInventingStrata(t *testing.T) {
 			}
 		}
 	})
-	for _, want := range []string{"fallback (subsystem only)", "matched on category+subsystem", "2026H1", "fix before cutoff", "fix after cutoff"} {
+	for _, want := range []string{"fallback", "fully matched", "2026H1", "before cutoff", "after cutoff"} {
 		if !strings.Contains(withCovariates, want) {
 			t.Errorf("with covariates present, expected bucket %q", want)
 		}
