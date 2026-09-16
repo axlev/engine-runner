@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/axlev/engine-runner/internal/contamscan"
 )
@@ -24,7 +25,17 @@ func main() {
 	keysDir := flag.String("keys", "", "directory of <case_id>.json contamination-keys/v1 files (required)")
 	bundles := flag.String("bundles", "", "cohort directory holding <case_id>/prospective; omit to scan without the exclusion set")
 	out := flag.String("out", "", "evaluator-only output directory (required)")
+	mode := flag.String("mode", "outputs", "outputs: the section 8 post-hoc scan over sealed reviews. inputs: the preflight over a cohort's reviewer-visible text, before publication (needs -cohort and -keys)")
+	cohort := flag.String("cohort", "", "inputs mode: the cohort directory to preflight, one case-<id>/ per case")
 	flag.Parse()
+	if *mode == "inputs" {
+		runPreflight(*cohort, *keysDir, *out)
+		return
+	}
+	if *mode != "outputs" {
+		fmt.Fprintf(os.Stderr, "contamscan: unknown -mode %q (outputs, inputs)\n", *mode)
+		os.Exit(2)
+	}
 	if *keysDir == "" || *out == "" {
 		fmt.Fprintln(os.Stderr, "contamscan: -keys and -out are required")
 		os.Exit(2)
@@ -98,4 +109,70 @@ func writeJSON(path string, v any) error {
 func fail(err error) {
 	fmt.Fprintln(os.Stderr, "contamscan:", err)
 	os.Exit(1)
+}
+
+// runPreflight is the inputs mode: does a cohort's reviewer-visible text
+// contain any case's own fixing identifiers, before anyone reviews it?
+//
+// This is a publication gate, and it fails loudly. Since the boundary
+// validator stopped rejecting identifier SHAPES in reviewer-metadata/v2
+// text - correctly, because v2 proves that text pre-merge and pre-merge
+// prose legitimately carries SHAs - this exact check is what rejects a real
+// leak. A cohort that has not passed it has not been checked, and a case
+// with no keys file is reported as unchecked rather than counted as clean.
+func runPreflight(cohort, keysDir, out string) {
+	if cohort == "" || keysDir == "" || out == "" {
+		fmt.Fprintln(os.Stderr, "contamscan -mode inputs: -cohort, -keys and -out are required")
+		os.Exit(2)
+	}
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		fail(err)
+	}
+	entries, err := os.ReadDir(cohort)
+	if err != nil {
+		fail(err)
+	}
+	var results []contamscan.Preflight
+	var skipped []string
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), "case-") {
+			continue
+		}
+		caseID := e.Name()
+		keys, sum, err := contamscan.LoadKeys(filepath.Join(keysDir, caseID+".json"))
+		if os.IsNotExist(err) {
+			skipped = append(skipped, caseID)
+			fmt.Fprintf(os.Stderr, "contamscan: %s: no keys; NOT checked, not cleared\n", caseID)
+			continue
+		}
+		if err != nil {
+			fail(err)
+		}
+		p, err := contamscan.PreflightCase(filepath.Join(cohort, caseID), keys, sum)
+		if err != nil {
+			fail(err)
+		}
+		results = append(results, p)
+		if err := writeJSON(filepath.Join(out, caseID+".contamination-preflight.json"), p); err != nil {
+			fail(err)
+		}
+		for _, h := range p.Hits {
+			fmt.Printf("FAIL %s: %s hit in %s (%s)\n", caseID, h.Kind, h.Stage, h.Matched)
+		}
+	}
+	summary := contamscan.SummarisePreflight(results, skipped)
+	if err := writeJSON(filepath.Join(out, "preflight-summary.json"), summary); err != nil {
+		fail(err)
+	}
+	fmt.Printf("\npreflight: %d case(s) checked, %d failed, %d unchecked (no keys)\n",
+		summary.Scanned, len(summary.Failed), len(summary.Skipped))
+	if len(summary.Failed) > 0 {
+		fmt.Fprintf(os.Stderr, "\nthese cases carry their own fixing identifiers in reviewer-visible text and must not be published: %s\n",
+			strings.Join(summary.Failed, ", "))
+		os.Exit(1)
+	}
+	if len(summary.Skipped) > 0 {
+		fmt.Fprintf(os.Stderr, "%d case(s) had no keys and were NOT checked; the cohort is not cleared until they are\n", len(summary.Skipped))
+		os.Exit(1)
+	}
 }

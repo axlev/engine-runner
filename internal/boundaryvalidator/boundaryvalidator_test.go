@@ -623,7 +623,9 @@ func TestMetadataVocabularyWarnsButIdentifiersFail(t *testing.T) {
 		t.Errorf("the warning must quote the matched text so a reader can judge it: %+v", r.Warnings)
 	}
 
-	// Identifier shapes remain hard errors under both versions.
+	// Identifier shapes remain hard errors under v1, which carries no
+	// edit-history proof that the text is pre-merge. Under v2 they are
+	// recorded instead - see TestIdentifierSeverityDependsOnMetadataVersion.
 	for name, desc := range map[string]string{
 		"commit sha":   "Reverts a1b2c3d, which broke the build.",
 		"full sha":     "See 0123456789abcdef0123456789abcdef01234567 for context.",
@@ -632,14 +634,14 @@ func TestMetadataVocabularyWarnsButIdentifiersFail(t *testing.T) {
 	} {
 		b := copyBundle(t)
 		writeMetadata(t, b, map[string]any{
-			"schema_version":   "reviewer-metadata/v2",
+			"schema_version":   "reviewer-metadata/v1",
 			"repository":       "example/widget-service",
 			"description":      desc,
 			"cutoff_timestamp": "2026-01-01T00:00:00Z",
 		})
 		rewriteChecksum(t, b, "reviewer/metadata.json")
 		if r := validate(t, b); !hasViolation(r, RuleOracleShaped) {
-			t.Errorf("%s must fail: %q gave %s", name, desc, r.Summary())
+			t.Errorf("%s must fail under v1: %q gave %s", name, desc, r.Summary())
 		}
 	}
 
@@ -655,5 +657,48 @@ func TestMetadataVocabularyWarnsButIdentifiersFail(t *testing.T) {
 	rewriteChecksum(t, b, "reviewer/metadata.json")
 	if r := validate(t, b); r.Result != "pass" {
 		t.Errorf("ordinary numbers and words must not read as identifiers: %s", r.Summary())
+	}
+}
+
+// Identifier hits in metadata are hard under v1 and recorded under v2.
+//
+// Under v2 the miner admits title and description only when their edit
+// history proves the last edit was at or before merge, so a commit SHA or
+// PR number in them is legitimate pre-merge prose - a backport listing what
+// it cherry-picks, a PR naming the one it supersedes. The shape check
+// cannot tell those from a leaked fixing SHA; the exact check against the
+// case's keys can, and that is where the guarantee lives.
+func TestIdentifierSeverityDependsOnMetadataVersion(t *testing.T) {
+	desc := "Backports 1a2b3c4d5e6f7a8b and 9f8e7d6c5b4a3210 from master; supersedes #1234."
+
+	v2 := copyBundle(t)
+	writeMetadata(t, v2, map[string]any{
+		"schema_version":   "reviewer-metadata/v2",
+		"repository":       "example/widget-service",
+		"description":      desc,
+		"cutoff_timestamp": "2026-01-01T00:00:00Z",
+	})
+	rewriteChecksum(t, v2, "reviewer/metadata.json")
+	r := validate(t, v2)
+	if r.Result != "pass" {
+		t.Errorf("v2: provably pre-merge prose must pass: %s", r.Summary())
+	}
+	if !hasWarning(r, "1a2b3c4d5e6f7a8b") {
+		t.Errorf("v2: the identifier must still be recorded: %+v", r.Warnings)
+	}
+	if !hasWarning(r, "contamination keys") {
+		t.Errorf("v2: the warning must point at the check that can reject a real leak: %+v", r.Warnings)
+	}
+
+	v1 := copyBundle(t)
+	writeMetadata(t, v1, map[string]any{
+		"schema_version":   "reviewer-metadata/v1",
+		"repository":       "example/widget-service",
+		"description":      desc,
+		"cutoff_timestamp": "2026-01-01T00:00:00Z",
+	})
+	rewriteChecksum(t, v1, "reviewer/metadata.json")
+	if r := validate(t, v1); !hasViolation(r, RuleOracleShaped) {
+		t.Errorf("v1 has no edit-history proof, so identifiers stay hard: %s", r.Summary())
 	}
 }

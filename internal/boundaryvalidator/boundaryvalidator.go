@@ -593,6 +593,10 @@ func checkMetadata(metadataPath string, add, warn func(rule, path, detail string
 		return "", true
 	}
 
+	// Read the declared version first: it selects how strictly identifier
+	// hits in field VALUES are treated (see below).
+	version, _ := fields["schema_version"].(string)
+
 	names := make([]string, 0, len(fields))
 	for name := range fields {
 		names = append(names, name)
@@ -622,10 +626,37 @@ func checkMetadata(metadataPath string, add, warn func(rule, path, detail string
 				break
 			}
 		}
-		// Identifiers: a hard error, always.
+		// Identifiers. Hard under v1; recorded under v2.
+		//
+		// The hard rule's premise is "a reviewer at the cutoff could not
+		// have seen this". Under v1 that holds: nothing proves when the
+		// text was written. Under v2 the miner admits title and
+		// description only when their own edit history shows the last edit
+		// at or before merge, so the text IS provably pre-merge - and
+		// pre-merge prose legitimately carries commit SHAs and PR numbers
+		// (a backport listing the commits it cherry-picks, a PR naming the
+		// one it supersedes). Eight of the first forty mined bundles are
+		// that shape.
+		//
+		// What this check cannot do, at any severity, is tell THE fixing
+		// SHA from any other SHA - it matches shapes, and it has no keys.
+		// So under v2 it records rather than rejects, and the real
+		// guarantee moves to the exact check that can tell them apart:
+		// cmd/contamscan -mode inputs, which matches the cohort's
+		// reviewer-visible text against each case's actual
+		// contamination-keys/v1 and fails the case on a real hit. That
+		// preflight is evaluator-side (it needs the keys, which no
+		// reviewer may see) and MUST be run before a cohort is published.
+		// Without it, v2 identifier hits are recorded and nothing rejects
+		// a genuinely leaked fixing SHA.
+		identifierSeverity := add
+		if version == "reviewer-metadata/v2" {
+			identifierSeverity = warn
+		}
 		for _, hit := range identifierHits(value) {
-			add(RuleOracleShaped, rel, fmt.Sprintf(
-				"field %q contains %s, which a reviewer at the cutoff could not have seen", name, hit))
+			identifierSeverity(RuleOracleShaped, rel, fmt.Sprintf(
+				"field %q contains %s; under reviewer-metadata/v2 the text is provably pre-merge, so this is recorded, not failed - the exact check against this case's contamination keys (cmd/contamscan -mode inputs) is what rejects a real leak",
+				name, hit))
 		}
 		// Vocabulary: recorded, never fatal. See the doc comment.
 		for _, frag := range oracleShapedSubstrings {
@@ -638,7 +669,6 @@ func checkMetadata(metadataPath string, add, warn func(rule, path, detail string
 		}
 	}
 
-	version, _ := fields["schema_version"].(string)
 	if !acceptedReviewerMetadataSchemas[version] {
 		add(RulePinnedSchemas, rel,
 			fmt.Sprintf("schema_version is %q, want one of the pinned %v", version, acceptedReviewerMetadataSchemaList()))
