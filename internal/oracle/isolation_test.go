@@ -107,6 +107,10 @@ var evaluatorOnlyMarkers = []string{
 	// text, so it is oracle-grade: contamscan, probe and h1score read it;
 	// no reviewer arm may.
 	"-evaluator-inputs",
+	// Section 6 judge material: the fixing diffs it reads ARE the answer,
+	// and its verdicts are derived from them.
+	"h1-judge",
+	"fixes-keyed",
 }
 
 // TestReviewPathNamesNoEvaluatorOnlyPath closes the door the import guard

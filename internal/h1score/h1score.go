@@ -176,6 +176,15 @@ type CaseVerdict struct {
 	Risky            bool
 	RecommendedPaths []string
 	Class            string // reviewer-assigned class of the primary finding, if any
+
+	// The primary finding is what section 6's judge reads: under T stage
+	// B's first surviving assessment, under G findings[0]. Carried here so
+	// the judge does not re-open the sealed run and risk reading a
+	// different finding than the one the scorer used.
+	PrimaryFindingID string
+	PrimaryMechanism string
+	PrimaryFile      string
+	PrimaryLine      int
 }
 
 // ---- output ----
@@ -336,6 +345,7 @@ type Report struct {
 	Arms              map[string]ArmReport `json:"arms"`
 	Pairwise          []Pairwise           `json:"pairwise"`
 	ReasonMatch       any                  `json:"reason_match"`
+	ReasonMatchNote   string               `json:"reason_match_note,omitempty"`
 	ReasonMatchAbsent string               `json:"reason_match_absent"`
 	Underpowered      map[string]bool      `json:"underpowered_at_this_cohort_size"`
 }
@@ -449,7 +459,11 @@ func LoadVerdicts(runsRoot string, armIDs map[string]string, voided map[string]b
 			Verdict          string   `json:"verdict"`
 			RecommendedPaths []string `json:"recommended_paths"`
 			Primary          *struct {
-				Class string `json:"class"`
+				ID        string `json:"id"`
+				Class     string `json:"class"`
+				Mechanism string `json:"mechanism"`
+				File      string `json:"file"`
+				Line      int    `json:"line"`
 			} `json:"primary_finding"`
 		}
 		vp := filepath.Join(filepath.Dir(m), "evaluation", "verdict.json")
@@ -465,6 +479,10 @@ func LoadVerdicts(runsRoot string, armIDs map[string]string, voided map[string]b
 		cv := CaseVerdict{CaseID: run.CaseID, RunID: run.RunID, Risky: v.Verdict == "RISKY", RecommendedPaths: v.RecommendedPaths}
 		if v.Primary != nil {
 			cv.Class = v.Primary.Class
+			cv.PrimaryFindingID = v.Primary.ID
+			cv.PrimaryMechanism = v.Primary.Mechanism
+			cv.PrimaryFile = v.Primary.File
+			cv.PrimaryLine = v.Primary.Line
 		}
 		byArm[arm][run.CaseID] = cv
 	}
@@ -886,6 +904,8 @@ type Options struct {
 	// are counted, but they make the whole result provisional.
 	ProbeVoided     []string
 	ProbeUnresolved []string
+	// ReasonMatch is the h1judge summary, when that pass has run.
+	ReasonMatch any
 }
 
 // Score computes the report. It fails closed on a run whose case has no
@@ -973,9 +993,15 @@ func Score(o Options) (Report, error) {
 		},
 		Arms:              map[string]ArmReport{},
 		Pairwise:          []Pairwise{},
-		ReasonMatchAbsent: "the reason-match judge pass has not run; fed from internal/judge in a later pass",
+		ReasonMatchAbsent: "the reason-match judge pass has not run; fed from cmd/h1judge in a later pass",
 		Underpowered:      map[string]bool{},
 	}
+	if o.ReasonMatch != nil {
+		r.ReasonMatch = o.ReasonMatch
+		r.ReasonMatchAbsent = ""
+		r.ReasonMatchNote = "Judge is in-family with the treatment arm (both Opus); section 6 requires that stated on every figure derived from it."
+	}
+
 	r.ProbeVoidedCases = sortedCopy(o.ProbeVoided)
 	r.ProbeUnresolvedCases = sortedCopy(o.ProbeUnresolved)
 	if len(r.ProbeUnresolvedCases) > 0 {
