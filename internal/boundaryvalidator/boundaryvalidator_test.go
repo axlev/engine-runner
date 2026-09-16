@@ -587,3 +587,73 @@ func TestTLVBoundsBundlePasses(t *testing.T) {
 		t.Fatalf("the tlv-bounds bundle must pass: %s", r.Summary())
 	}
 }
+
+// hasWarning reports whether the report recorded a warning naming frag.
+func hasWarning(r Report, frag string) bool {
+	for _, w := range r.Warnings {
+		if strings.Contains(w.Detail, frag) {
+			return true
+		}
+	}
+	return false
+}
+
+// reviewer-metadata/v2 admits the author's own pre-merge description for
+// nearly every case, so the oracle VOCABULARY list now fires on ordinary
+// English. It is recorded, not failed. The identifier shapes stay fatal.
+func TestMetadataVocabularyWarnsButIdentifiersFail(t *testing.T) {
+	// The exact prose that failed cohort-verify on a real negative.
+	bundle := copyBundle(t)
+	writeMetadata(t, bundle, map[string]any{
+		"schema_version":   "reviewer-metadata/v2",
+		"repository":       "example/widget-service",
+		"title":            "Add pagination",
+		"description":      "The earlier attempt complicated the solution, so this reworks it.",
+		"cutoff_timestamp": "2026-01-01T00:00:00Z",
+	})
+	rewriteChecksum(t, bundle, "reviewer/metadata.json")
+	r := validate(t, bundle)
+	if r.Result != "pass" {
+		t.Errorf("ordinary review-time prose must pass: %s", r.Summary())
+	}
+	if !hasWarning(r, `"solution"`) {
+		t.Errorf("the vocabulary hit must still be recorded as a warning: %+v", r.Warnings)
+	}
+	if !hasWarning(r, "complicated the solution") {
+		t.Errorf("the warning must quote the matched text so a reader can judge it: %+v", r.Warnings)
+	}
+
+	// Identifier shapes remain hard errors under both versions.
+	for name, desc := range map[string]string{
+		"commit sha":   "Reverts a1b2c3d, which broke the build.",
+		"full sha":     "See 0123456789abcdef0123456789abcdef01234567 for context.",
+		"pr reference": "Supersedes #4242.",
+		"cve":          "Related to CVE-2026-0001.",
+	} {
+		b := copyBundle(t)
+		writeMetadata(t, b, map[string]any{
+			"schema_version":   "reviewer-metadata/v2",
+			"repository":       "example/widget-service",
+			"description":      desc,
+			"cutoff_timestamp": "2026-01-01T00:00:00Z",
+		})
+		rewriteChecksum(t, b, "reviewer/metadata.json")
+		if r := validate(t, b); !hasViolation(r, RuleOracleShaped) {
+			t.Errorf("%s must fail: %q gave %s", name, desc, r.Summary())
+		}
+	}
+
+	// Prose that merely contains long words or decimal numbers is not an
+	// identifier: the shapes are anchored, not substring matches.
+	b := copyBundle(t)
+	writeMetadata(t, b, map[string]any{
+		"schema_version":   "reviewer-metadata/v2",
+		"repository":       "example/widget-service",
+		"description":      "Handles up to 1024 entries and defeats the deadbeat retry loop after 30 seconds.",
+		"cutoff_timestamp": "2026-01-01T00:00:00Z",
+	})
+	rewriteChecksum(t, b, "reviewer/metadata.json")
+	if r := validate(t, b); r.Result != "pass" {
+		t.Errorf("ordinary numbers and words must not read as identifiers: %s", r.Summary())
+	}
+}

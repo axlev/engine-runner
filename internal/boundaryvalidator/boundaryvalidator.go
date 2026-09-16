@@ -25,6 +25,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -78,6 +79,10 @@ type Report struct {
 	// ObservedSchemaVersions records the schema_version each pinned
 	// document actually carried, verbatim, whether or not it was accepted.
 	ObservedSchemaVersions map[string]string `json:"observed_schema_versions,omitempty"`
+
+	// Warnings are findings recorded but not failed on. The metadata
+	// vocabulary rule lives here: see checkMetadata.
+	Warnings []Violation `json:"warnings,omitempty"`
 
 	// Waivers records violations that were knowingly overridden by
 	// protocol configuration. They are reported, never silently dropped:
@@ -312,6 +317,9 @@ func ValidateWithConfig(caseID, bundleRoot string, cfg Config) (Report, error) {
 	add := func(rule, path, detail string) {
 		byRule[rule] = append(byRule[rule], Violation{Rule: rule, Path: path, Detail: detail})
 	}
+	warn := func(rule, path, detail string) {
+		report.Warnings = append(report.Warnings, Violation{Rule: rule, Path: path, Detail: detail})
+	}
 
 	reviewerRoot := filepath.Join(bundleRoot, "reviewer")
 	if _, err := os.Stat(reviewerRoot); err != nil {
@@ -321,7 +329,7 @@ func ValidateWithConfig(caseID, bundleRoot string, cfg Config) (Report, error) {
 	}
 
 	observed := map[string]string{}
-	if v, present := checkMetadata(filepath.Join(reviewerRoot, "metadata.json"), add); present {
+	if v, present := checkMetadata(filepath.Join(reviewerRoot, "metadata.json"), add, warn); present {
 		observed["reviewer/metadata.json"] = v
 	}
 	checkChecksums(bundleRoot, reviewerRoot, add)
@@ -550,7 +558,26 @@ func checkOracleShapedPath(rel, basename string, add func(rule, path, detail str
 
 // checkMetadata returns the schema_version the file carried and whether
 // the file was present at all.
-func checkMetadata(metadataPath string, add func(rule, path, detail string)) (string, bool) {
+// checkMetadata validates reviewer/metadata.json.
+//
+// The oracle-shaped rule is SPLIT here, and the split is the point.
+// Identifier hits - a commit SHA, a PR number, a CVE - are the real oracle
+// shape: a reviewer at the cutoff could not have seen them, so they stay a
+// hard error. Vocabulary hits are different. The word list was written for
+// PATHS, where the miner controls the names; under reviewer-metadata/v1 a
+// description was almost never present, so the list was never tested
+// against real PR prose. v2 admits title and description for nearly every
+// case, and an author writing "this complicated the solution" before merge
+// is writing ordinary review-time English, not leaking an outcome.
+//
+// This is the same reasoning already applied inside reviewer/repository/
+// above: a check that fires constantly on clean input gets turned off, and
+// that is worse than a narrower check people trust. So vocabulary hits on
+// metadata VALUES are recorded as warnings - field and matched text, in the
+// sealed report - and never fail the bundle. The word list is unchanged;
+// tuning words in and out case by case would be fitting the rule to the
+// cohort.
+func checkMetadata(metadataPath string, add, warn func(rule, path, detail string)) (string, bool) {
 	raw, err := os.ReadFile(metadataPath)
 	if err != nil {
 		// metadata.json is optional per section 7 ("if a field cannot be
@@ -595,10 +622,17 @@ func checkMetadata(metadataPath string, add func(rule, path, detail string)) (st
 				break
 			}
 		}
+		// Identifiers: a hard error, always.
+		for _, hit := range identifierHits(value) {
+			add(RuleOracleShaped, rel, fmt.Sprintf(
+				"field %q contains %s, which a reviewer at the cutoff could not have seen", name, hit))
+		}
+		// Vocabulary: recorded, never fatal. See the doc comment.
 		for _, frag := range oracleShapedSubstrings {
 			if strings.Contains(lower, frag) {
-				add(RuleOracleShaped, rel,
-					fmt.Sprintf("field %q contains %q, which suggests retrospective or outcome material", name, frag))
+				warn(RuleOracleShaped, rel, fmt.Sprintf(
+					"field %q contains the word %q (matched text: %q); recorded, not failed - the vocabulary list was written for paths and fires on ordinary review-time prose",
+					name, frag, excerptAround(value, frag)))
 				break
 			}
 		}
@@ -610,6 +644,64 @@ func checkMetadata(metadataPath string, add func(rule, path, detail string)) (st
 			fmt.Sprintf("schema_version is %q, want one of the pinned %v", version, acceptedReviewerMetadataSchemaList()))
 	}
 	return version, true
+}
+
+// identifierHits reports commit SHAs (>= 7 hex at a word boundary), PR
+// references and CVE ids in a metadata value. These are the shapes that
+// cannot be innocent in reviewer-visible text: the description is written
+// before merge, so a fixing SHA or CVE in it means the bundle was built
+// from post-merge material.
+//
+// Deliberately NOT reusing contamscan's rules: those match against a
+// specific case's known fixing identifiers, and the validator has no keys
+// file - it must reject the SHAPE of an identifier, whatever its value.
+func identifierHits(value string) []string {
+	var out []string
+	for _, m := range metadataSHAPattern.FindAllString(value, -1) {
+		out = append(out, fmt.Sprintf("a commit-like hex string (%q)", m))
+	}
+	for _, p := range metadataPRPatterns {
+		for _, m := range p.FindAllString(value, -1) {
+			out = append(out, fmt.Sprintf("a pull-request reference (%q)", m))
+		}
+	}
+	for _, m := range metadataCVEPattern.FindAllString(value, -1) {
+		out = append(out, fmt.Sprintf("a CVE identifier (%q)", m))
+	}
+	return out
+}
+
+var (
+	// A bare 7+ hex run. Anchored to word boundaries so ordinary words and
+	// decimal numbers do not match.
+	metadataSHAPattern = regexp.MustCompile(`(?i)\b[0-9a-f]{7,40}\b`)
+	metadataCVEPattern = regexp.MustCompile(`(?i)\bCVE-\d{4}-\d{4,7}\b`)
+	// PR-shaped only: a bare number in prose is a version or a count far
+	// more often than a pull request.
+	metadataPRPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`#\d+\b`),
+		regexp.MustCompile(`(?i)\bPR[ -]?#?\d+\b`),
+		regexp.MustCompile(`(?i)\bpull/\d+\b`),
+		regexp.MustCompile(`(?i)\bpull request #?\d+\b`),
+	}
+)
+
+// excerptAround returns a short window of text around a match, so the
+// warning shows the phrase a reader needs to judge it.
+func excerptAround(value, frag string) string {
+	lower := strings.ToLower(value)
+	i := strings.Index(lower, strings.ToLower(frag))
+	if i < 0 {
+		return ""
+	}
+	start, end := i-40, i+len(frag)+40
+	if start < 0 {
+		start = 0
+	}
+	if end > len(value) {
+		end = len(value)
+	}
+	return strings.TrimSpace(value[start:end])
 }
 
 func acceptedReviewerMetadataSchemaList() []string {
@@ -730,4 +822,42 @@ func checkControlManifest(manifestPath string, add func(rule, path, detail strin
 			fmt.Sprintf("schema_version is %q, want the pinned %q", version, pinnedControlManifestSchema))
 	}
 	return version, true
+}
+
+// evaluatorOnlyDirSuffixes mark directories holding answer-key material:
+// the miner's published probe inputs and contamination keys, and the
+// retrospective bundles. A prospective bundle can never legitimately live
+// under one - the probe inputs quote the symptom and the keys quote
+// post-merge discussion, so a reviewer given either is not reviewing.
+var evaluatorOnlyDirSuffixes = []string{"-evaluator-inputs", "-evaluator-only"}
+
+// RefuseEvaluatorOnlyBundle fails closed when a bundle path resolves under
+// a directory holding evaluator material.
+//
+// It lives here rather than in cmd/bench deliberately. The isolation test
+// forbids review-path packages from naming evaluator-only paths at all -
+// a mount built from a string reaches a model as surely as an import does -
+// and a guard that refuses those paths must name them. Putting it with the
+// other admissibility checks lets the caller enforce the boundary without
+// naming it, and keeps the guard beside the rules it belongs with rather
+// than in a main().
+//
+// The path is resolved through symlinks before matching, so a link into
+// evaluator material cannot launder it.
+func RefuseEvaluatorOnlyBundle(bundleRoot string) error {
+	abs, err := filepath.Abs(bundleRoot)
+	if err != nil {
+		return fmt.Errorf("boundaryvalidator: resolving bundle path: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	}
+	for _, seg := range strings.Split(filepath.ToSlash(abs), "/") {
+		for _, suffix := range evaluatorOnlyDirSuffixes {
+			if strings.HasSuffix(seg, suffix) {
+				return fmt.Errorf("boundaryvalidator: refusing bundle %s: it lies under %q, which holds evaluator-only material (probe inputs, contamination keys, history). A reviewer given that is not reviewing", bundleRoot, seg)
+			}
+		}
+	}
+	return nil
 }

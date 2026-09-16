@@ -101,6 +101,12 @@ var evaluatorOnlyMarkers = []string{
 	// A11 probe material: the symptom descriptions ARE the outcome, and
 	// the responses are a record of what the model already knew about it.
 	"contamination-probe",
+	// The miner publishes the evaluator's per-case probe inputs, keys and
+	// history under a -evaluator-inputs directory. The keys quote
+	// post-merge discussion verbatim and the probes carry the symptom
+	// text, so it is oracle-grade: contamscan, probe and h1score read it;
+	// no reviewer arm may.
+	"-evaluator-inputs",
 }
 
 // TestReviewPathNamesNoEvaluatorOnlyPath closes the door the import guard

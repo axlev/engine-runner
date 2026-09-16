@@ -21,6 +21,7 @@ import (
 	"github.com/axlev/engine-runner/internal/adapters/claude"
 	"github.com/axlev/engine-runner/internal/adapters/codex"
 	"github.com/axlev/engine-runner/internal/adapters/fixture"
+	"github.com/axlev/engine-runner/internal/boundaryvalidator"
 	"github.com/axlev/engine-runner/internal/orchestrator"
 	"github.com/axlev/engine-runner/internal/results"
 )
@@ -65,6 +66,9 @@ func parseArgs(args []string) (config, error) {
 	}
 	if cfg.bundleRoot == "" {
 		return config{}, fmt.Errorf("-bundle is required")
+	}
+	if err := boundaryvalidator.RefuseEvaluatorOnlyBundle(cfg.bundleRoot); err != nil {
+		return config{}, err
 	}
 	if cfg.caseID == "" {
 		return config{}, fmt.Errorf("-case-id is required")
