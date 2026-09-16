@@ -113,6 +113,19 @@ type RunRequest struct {
 	// when the arm file was silent.
 	Tools []string `json:"tools,omitempty"`
 
+	// NoTools withholds every tool, as distinct from leaving Tools unset
+	// (which resolves to the narrowest grant, Read). It exists for the
+	// contamination probes of pre-registration A11, where the model must
+	// answer from memory or not at all: a probe that could read anything
+	// is not the probe that was registered. Expressed to the CLI as
+	// --tools "", which it documents as disabling all tools.
+	//
+	// Deliberately a separate field rather than an empty Tools slice: the
+	// agent-set loader already rejects `tools: []` and tells the author to
+	// omit the key instead, so empty meaning "none" here would contradict
+	// what it means there.
+	NoTools bool `json:"no_tools,omitempty"`
+
 	// Environment carries scoped, non-secret values into the isolated
 	// execution. Credentials are injected by the runner as scoped
 	// secrets and must never appear here or be echoed into RunResult.

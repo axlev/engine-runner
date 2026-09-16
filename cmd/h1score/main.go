@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 
 	"github.com/axlev/engine-runner/internal/h1score"
+	"github.com/axlev/engine-runner/internal/probe"
 )
 
 func main() {
@@ -22,6 +23,8 @@ func main() {
 	history := flag.String("history", "", "directory of <case_id>.json history-baseline/v1 files (arm H)")
 	fixing := flag.String("fixing-paths", "", "directory of <case_id>.json h1-fixing-paths/v1 files")
 	scans := flag.String("scans", "", "contamscan output directory; voided runs are excluded")
+	probes := flag.String("probes", "", "cmd/probe output directory (A11); a probe hit voids the case for EVERY arm")
+	probeVerdicts := flag.String("probe-verdicts", "", "directory of <case_id>.json contamination-probe-verdict/v1 files written by the evaluator after reading the probe responses")
 	armT := flag.String("arm-t", "h1-t-v1", "protocol_version of arm T")
 	armG := flag.String("arm-g", "h1-g-v1", "protocol_version of arm G")
 	threshold := flag.Float64("threshold", 15, "pre-registered points over each baseline")
@@ -43,6 +46,7 @@ func main() {
 	check(err)
 	fp, err := h1score.LoadFixingPaths(*fixing, l.Cases)
 	check(err)
+	probeVoided, probeUnresolved := loadProbes(*probes, *probeVerdicts, l.Cases)
 
 	inputs := map[string]string{
 		"labels_sha256":          labelsSum,
@@ -51,10 +55,13 @@ func main() {
 		"history_dir":            *history,
 		"fixing_paths_dir":       *fixing,
 		"scans_dir":              *scans,
+		"probes_dir":             *probes,
+		"probe_verdicts_dir":     *probeVerdicts,
 	}
 	report, err := h1score.Score(h1score.Options{
 		Labels: l, Inputs: inputs, ArmIDs: armIDs, Verdicts: verdicts, Voided: voidCases,
 		History: hist, HistoryAbsentReasons: histReasons, FixingPaths: fp, Threshold: *threshold,
+		ProbeVoided: probeVoided, ProbeUnresolved: probeUnresolved,
 	})
 	check(err)
 	check(os.MkdirAll(*out, 0o755))
@@ -64,6 +71,12 @@ func main() {
 		a := report.Arms[arm]
 		fmt.Printf("%s: cases %d voided %d  TP %d FP %d FN %d TN %d  precision %s  recall %s\n",
 			arm, a.Cases, a.Voided, a.Counts.TP, a.Counts.FP, a.Counts.FN, a.Counts.TN, show(a.Precision), show(a.Recall))
+	}
+	if len(report.ProbeVoidedCases) > 0 {
+		fmt.Printf("probe-voided for every arm: %d case(s)\n", len(report.ProbeVoidedCases))
+	}
+	if report.Provisional {
+		fmt.Printf("PROVISIONAL: %s\n", report.ProvisionalReason)
 	}
 	for _, p := range report.Pairwise {
 		fmt.Printf("%s: common %d discordant %d  dPrecision %s (p1 %s)  dRecall %s (p1 %s)\n",
@@ -90,4 +103,42 @@ func check(err error) {
 		fmt.Fprintln(os.Stderr, "h1score:", err)
 		os.Exit(1)
 	}
+}
+
+// loadProbes reads the A11 probe reports and the evaluator's verdicts, and
+// splits the cohort into cases the probe voided and cases it could not
+// clear. A case with no probe report at all is neither: probing is the
+// evaluator's step, and h1score does not invent a result for a case that
+// was never probed.
+func loadProbes(probesDir, verdictsDir string, cases []h1score.Label) (voided, unresolved []string) {
+	if probesDir == "" {
+		return nil, nil
+	}
+	ids := make([]string, 0, len(cases))
+	for _, c := range cases {
+		ids = append(ids, c.CaseID)
+	}
+	verdicts, err := probe.LoadVerdicts(verdictsDir, ids)
+	check(err)
+	for _, c := range cases {
+		p := filepath.Join(probesDir, c.CaseID+".contamination-probe.json")
+		raw, err := os.ReadFile(p)
+		if os.IsNotExist(err) {
+			continue
+		}
+		check(err)
+		var rep probe.Report
+		check(json.Unmarshal(raw, &rep))
+		if rep.SchemaVersion != probe.ReportSchemaVersion || rep.CaseID != c.CaseID {
+			check(fmt.Errorf("%s is not a %s file for %s", p, probe.ReportSchemaVersion, c.CaseID))
+		}
+		v, have := verdicts[c.CaseID]
+		switch d := probe.Decide(rep, v, have); {
+		case d.Void:
+			voided = append(voided, c.CaseID)
+		case d.Unresolved:
+			unresolved = append(unresolved, c.CaseID)
+		}
+	}
+	return voided, unresolved
 }

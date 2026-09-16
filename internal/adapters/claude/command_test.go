@@ -254,3 +254,28 @@ func TestSafetyFlagsMatchTheInvocation(t *testing.T) {
 		t.Errorf("unknown kind must record no flags, got %v", f)
 	}
 }
+
+// A11's probes must run with no tools at all. An unset grant still means
+// Read; only NoTools means none, and it reaches the CLI as --tools "".
+func TestNoToolsWithholdsEveryTool(t *testing.T) {
+	args := buildClaudeArgs(adapters.RunRequest{NoTools: true}, Credentials{Kind: CredentialOAuthToken}, "p")
+	for i, a := range args {
+		if a == "--tools" {
+			if i+1 >= len(args) || args[i+1] != "" {
+				t.Fatalf("expected --tools with an empty value, got %v", args)
+			}
+			return
+		}
+	}
+	t.Fatalf("no --tools flag in %v", args)
+}
+
+func TestUnsetToolsStillMeansRead(t *testing.T) {
+	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialOAuthToken}, "p")
+	for i, a := range args {
+		if a == "--tools" && i+1 < len(args) && args[i+1] == "Read" {
+			return
+		}
+	}
+	t.Fatalf("expected --tools Read for an unset grant, got %v", args)
+}

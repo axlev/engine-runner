@@ -223,12 +223,25 @@ type PValue struct {
 }
 
 type Report struct {
-	SchemaVersion     string               `json:"schema_version"`
-	Inputs            map[string]string    `json:"inputs"`
-	Rules             map[string]any       `json:"rules"`
-	CohortSize        int                  `json:"cohort_size"`
-	Positives         int                  `json:"positives"`
-	Negatives         int                  `json:"negatives"`
+	SchemaVersion string            `json:"schema_version"`
+	Inputs        map[string]string `json:"inputs"`
+	Rules         map[string]any    `json:"rules"`
+	CohortSize    int               `json:"cohort_size"`
+	Positives     int               `json:"positives"`
+	Negatives     int               `json:"negatives"`
+
+	// ProbeVoidedCases are voided for EVERY arm by the A11 contamination
+	// probe - the model already knew how the change was fixed, so no arm's
+	// answer on it means anything. Excluded from every figure below.
+	ProbeVoidedCases []string `json:"probe_voided_cases"`
+	// ProbeUnresolvedCases passed the probe's mechanical scan but no
+	// evaluator has read the responses yet. The mechanical rules cannot see
+	// mechanism-level recall, so their silence is not an acquittal: while
+	// this list is non-empty the result is provisional.
+	ProbeUnresolvedCases []string `json:"probe_unresolved_cases"`
+	Provisional          bool     `json:"provisional"`
+	ProvisionalReason    string   `json:"provisional_reason,omitempty"`
+
 	Arms              map[string]ArmReport `json:"arms"`
 	Pairwise          []Pairwise           `json:"pairwise"`
 	ReasonMatch       any                  `json:"reason_match"`
@@ -755,10 +768,17 @@ type Options struct {
 	Verdicts map[string]map[string]CaseVerdict
 	Voided   map[string][]string // arm -> voided case ids
 	History  map[string]CaseVerdict
-	// HistoryAbsentReasons is LoadHistory\'s second return.
+	// HistoryAbsentReasons is LoadHistory's second return.
 	HistoryAbsentReasons map[string]string
 	FixingPaths          map[string][]string
 	Threshold            float64 // pre-registered points, 15
+
+	// ProbeVoided are cases the A11 contamination probe voided: dropped
+	// from every arm before counting. ProbeUnresolved are cases whose
+	// mechanical scan was clean but which no evaluator has read yet; they
+	// are counted, but they make the whole result provisional.
+	ProbeVoided     []string
+	ProbeUnresolved []string
 }
 
 // Score computes the report. It fails closed on a run whose case has no
@@ -770,6 +790,35 @@ func Score(o Options) (Report, error) {
 	labels := map[string]Label{}
 	for _, c := range o.Labels.Cases {
 		labels[c.CaseID] = c
+	}
+
+	// A11: a probe-voided case is void for EVERY arm - the model already
+	// knew how the change was fixed, so no arm's answer on it means
+	// anything. Drop it here, before any counting, so that no figure
+	// anywhere in the report includes it and no fail-closed check below
+	// demands a run for a case that is no longer in the cohort.
+	probeVoid := map[string]bool{}
+	for _, id := range o.ProbeVoided {
+		probeVoid[id] = true
+		delete(labels, id)
+	}
+	if len(probeVoid) > 0 {
+		for arm, vs := range o.Verdicts {
+			kept := map[string]CaseVerdict{}
+			for id, v := range vs {
+				if !probeVoid[id] {
+					kept[id] = v
+				}
+			}
+			o.Verdicts[arm] = kept
+		}
+		kept := map[string]CaseVerdict{}
+		for id, v := range o.History {
+			if !probeVoid[id] {
+				kept[id] = v
+			}
+		}
+		o.History = kept
 	}
 	for arm, vs := range o.Verdicts {
 		for id := range vs {
@@ -812,20 +861,33 @@ func Score(o Options) (Report, error) {
 			"preregistered_threshold": o.Threshold,
 			"voided_runs":             "excluded from the arm and counted; from contamination-scan/v1 void=true",
 			"history_absent":          "a case with no history-baseline/v1 file is absent for H, not CLEAN",
+			"probe_voided":            "A11: a case the contamination probe voided is dropped from EVERY arm before counting",
+			"probe_unresolved":        "A11: a case whose probe scan was clean but which no evaluator has read makes the result provisional; a clean mechanical scan is not an acquittal",
 		},
 		Arms:              map[string]ArmReport{},
 		Pairwise:          []Pairwise{},
 		ReasonMatchAbsent: "the reason-match judge pass has not run; fed from internal/judge in a later pass",
 		Underpowered:      map[string]bool{},
 	}
+	r.ProbeVoidedCases = sortedCopy(o.ProbeVoided)
+	r.ProbeUnresolvedCases = sortedCopy(o.ProbeUnresolved)
+	if len(r.ProbeUnresolvedCases) > 0 {
+		r.Provisional = true
+		r.ProvisionalReason = fmt.Sprintf(
+			"%d case(s) have no %s file; the probe's mechanical rules cannot see mechanism-level recall, so a clean scan is not an acquittal (pre-registration A11)",
+			len(r.ProbeUnresolvedCases), "contamination-probe-verdict/v1")
+	}
 	for _, c := range o.Labels.Cases {
+		if probeVoid[c.CaseID] {
+			continue
+		}
 		if c.Label == "positive" {
 			r.Positives++
 		} else {
 			r.Negatives++
 		}
 	}
-	r.CohortSize = len(o.Labels.Cases)
+	r.CohortSize = len(o.Labels.Cases) - len(probeVoid)
 	// Pre-registration s2: at 40 cases, +15 on recall (3 cases) cannot
 	// reach significance; it is reported as consistent-with, not as a pass.
 	r.Underpowered["recall"] = r.Positives <= 20
@@ -842,4 +904,12 @@ func Score(o Options) (Report, error) {
 	r.Pairwise = append(r.Pairwise, pairwise("T-G", labels, o.Verdicts[ArmT], o.Verdicts[ArmG], o.Threshold))
 	r.Pairwise = append(r.Pairwise, pairwise("T-H", labels, o.Verdicts[ArmT], o.History, o.Threshold))
 	return r, nil
+}
+
+// sortedCopy returns a sorted copy, never nil, so an absent list encodes as
+// [] rather than null.
+func sortedCopy(in []string) []string {
+	out := append([]string{}, in...)
+	sort.Strings(out)
+	return out
 }

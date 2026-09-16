@@ -79,11 +79,18 @@ func buildClaudeArgs(req adapters.RunRequest, creds Credentials, promptText stri
 	// built a RunRequest by hand rather than through LoadAgentSet - fall
 	// back to the narrowest set rather than inheriting the CLI's default,
 	// which would silently widen capability.
-	tools := req.Tools
-	if len(tools) == 0 {
-		tools = []string{"Read"}
+	// --tools "" is the CLI's documented way to disable every tool; an
+	// unset grant still falls back to the narrowest set rather than the
+	// CLI's default, which would silently widen capability.
+	if req.NoTools {
+		args = append(args, "--tools", "")
+	} else {
+		tools := req.Tools
+		if len(tools) == 0 {
+			tools = []string{"Read"}
+		}
+		args = append(args, "--tools", strings.Join(tools, ","))
 	}
-	args = append(args, "--tools", strings.Join(tools, ","))
 
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)

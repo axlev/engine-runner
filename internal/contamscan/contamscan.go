@@ -488,6 +488,32 @@ func discussionHits(stage string, sv stringValue, discussion map[string]string, 
 	return hits
 }
 
+// ScanIdentifiers applies the SHA, PR and CVE rules - not the discussion
+// rule - to one block of free text, and reports the hits under the given
+// label. It is the reusable half of the section 8 scan: the contamination
+// probes of A11 ask a model to recall a fix from memory, and the same
+// question is asked of the answer ("does it name the fixing commit, PR or
+// CVE?"), so the rules must be one implementation rather than two that
+// can drift.
+//
+// The discussion rule is deliberately excluded: it needs the reviewer's
+// excluded spans, which a probe answer has no equivalent of.
+func ScanIdentifiers(label, text string, keys Keys) []Hit {
+	shas := make([]string, 0, len(keys.FixingSHAs))
+	for _, s := range keys.FixingSHAs {
+		shas = append(shas, strings.ToLower(s))
+	}
+	prs := map[string]bool{}
+	for _, n := range keys.FixingPRNumbers {
+		prs[fmt.Sprint(n)] = true
+	}
+	cves := map[string]bool{}
+	for _, c := range keys.CVEIDs {
+		cves[strings.ToUpper(c)] = true
+	}
+	return scanString(label, stringValue{Path: "$", Value: text}, shas, prs, cves, nil, nil)
+}
+
 // Summary aggregates scans per arm.
 type Summary struct {
 	SchemaVersion string              `json:"schema_version"`

@@ -98,6 +98,9 @@ var evaluatorOnlyMarkers = []string{
 	"h1-labels",
 	"history-baseline",
 	"h1-fixing-paths",
+	// A11 probe material: the symptom descriptions ARE the outcome, and
+	// the responses are a record of what the model already knew about it.
+	"contamination-probe",
 }
 
 // TestReviewPathNamesNoEvaluatorOnlyPath closes the door the import guard

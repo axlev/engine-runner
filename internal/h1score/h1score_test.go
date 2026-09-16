@@ -297,3 +297,50 @@ func TestA8FisherExact(t *testing.T) {
 		t.Errorf("H with no cases: absent with a reason, got %+v", v)
 	}
 }
+
+// A11: a probe-voided case is void for every arm, and vanishes from every
+// figure. A case the probe could not clear makes the whole result
+// provisional rather than being silently counted as clean.
+func TestProbeVoidsForAllArmsAndFlagsUnresolved(t *testing.T) {
+	l := cohort(2) // posa/nega, posb/negb
+	T := verdicts(map[string]bool{"posa": true, "nega": false, "posb": true, "negb": false})
+	G := verdicts(map[string]bool{"posa": true, "nega": true, "posb": false, "negb": false})
+	r, err := Score(Options{Labels: l, ArmIDs: map[string]string{"T": "t", "G": "g"},
+		Verdicts:    map[string]map[string]CaseVerdict{"T": T, "G": G},
+		History:     verdicts(map[string]bool{"posa": true, "posb": false}),
+		ProbeVoided: []string{"posa"}, ProbeUnresolved: []string{"posb"}, Threshold: 15})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.ProbeVoidedCases) != 1 || r.ProbeVoidedCases[0] != "posa" {
+		t.Errorf("probe_voided_cases: %v", r.ProbeVoidedCases)
+	}
+	if r.CohortSize != 3 || r.Positives != 1 {
+		t.Errorf("voided case must leave the cohort: size=%d positives=%d", r.CohortSize, r.Positives)
+	}
+	for _, arm := range []string{"T", "G", "H"} {
+		a := r.Arms[arm]
+		if a.Counts.TP+a.Counts.FP+a.Counts.FN+a.Counts.TN != a.Cases {
+			t.Errorf("%s: counts/cases disagree: %+v", arm, a)
+		}
+		for _, id := range a.Absent {
+			if id == "posa" {
+				t.Errorf("%s: probe-voided case still listed: %v", arm, a.Absent)
+			}
+		}
+	}
+	// T called posa RISKY and it was a true positive; dropping it must
+	// remove it from T's TP count.
+	if r.Arms["T"].Counts.TP != 1 {
+		t.Errorf("T TP should count only posb, got %+v", r.Arms["T"].Counts)
+	}
+	if !r.Provisional || r.ProvisionalReason == "" || len(r.ProbeUnresolvedCases) != 1 {
+		t.Errorf("unresolved probe must make the result provisional: %+v", r.ProbeUnresolvedCases)
+	}
+	// With every probe resolved, the result is no longer provisional.
+	r2, _ := Score(Options{Labels: cohort(2), ArmIDs: map[string]string{"T": "t", "G": "g"},
+		Verdicts: map[string]map[string]CaseVerdict{"T": T, "G": G}, Threshold: 15})
+	if r2.Provisional {
+		t.Error("no unresolved probes must not be provisional")
+	}
+}
