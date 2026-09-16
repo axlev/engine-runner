@@ -162,7 +162,7 @@ Figures are the CLI's ESTIMATE of equivalent API cost under a subscription token
 
 | Artifact | Value |
 |---|---|
-| engine commit | `1219b5a` |
+| engine commit | `f494ad6` |
 | cohort `records_sha256` | `b2279b9c` |
 | input `cohort_manifest_sha256` | `9b0d8e6524d634101eb765ba77066b86958ae242ea166c3cea6caa7f276bccb0` |
 | input `labels_sha256` | `1cf01f86a3dbb723588d0856326521ab0aefd410492e0c94812f273c3f792703` |
@@ -206,6 +206,17 @@ knowing the subsystem". The §2 pairwise criterion is carried by T−G.
 the stateful category is unbalanced on a dimension the arms can see in the
 diff — every HIGH bgpd positive is a fallback pair by construction. Pairwise
 deltas are to be reported with and without them.
+
+**The judge reads one finding per arm, not all of them (§6).** The judged
+pool carries each arm's HIGHEST-RANKED finding only — under T stage B's first
+surviving assessment, under G `findings[0]`. This differs from the pilot's
+judge, which pooled every finding a reviewer produced, and the difference is
+deliberate: §6 scores "the case's highest-ranked finding" and the treatment
+brief §5 makes ranking a scored output for exactly this reason. It is the
+stricter test — a reviewer earns nothing for burying the right answer at
+position nine, and ranking badly costs the same as not finding the defect at
+all. Reason-match figures here are therefore NOT comparable with the pilot's
+anticipation rate, which used the looser pool.
 
 **In-family judge (§6).** Reason match is adjudicated by Opus, the same model
 family as the treatment arm. This is stated on every figure derived from it.

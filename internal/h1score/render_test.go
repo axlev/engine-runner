@@ -144,3 +144,18 @@ func TestRenderRecordsProvenance(t *testing.T) {
 		}
 	}
 }
+
+// The judge's divergence from the pilot must be in the document, not
+// discovered later by someone comparing the two numbers.
+func TestRenderRecordsTheJudgeDivergenceFromThePilot(t *testing.T) {
+	doc := renderFixture(t, nil)
+	for _, want := range []string{
+		"one finding per arm",
+		"differs from the pilot's",
+		"NOT comparable with the pilot's",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("limitations lack %q", want)
+		}
+	}
+}
