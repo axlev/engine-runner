@@ -19,6 +19,20 @@ import (
 // positional argument rather than a shell "$(cat ...)" substitution, since
 // exec.Command never invokes a shell - this also sidesteps any shell
 // quoting/injection concern entirely.
+// safetyFlagsFor returns the customization-disabling flags for a credential
+// kind. It is the single definition of that mapping: the invocation passes
+// exactly what the sealed result records, so the artifact cannot claim a
+// flag the CLI never received.
+func safetyFlagsFor(kind CredentialKind) []string {
+	switch kind {
+	case CredentialAPIKey:
+		return []string{"--bare"}
+	case CredentialOAuthToken:
+		return []string{"--safe-mode"}
+	}
+	return nil
+}
+
 func buildClaudeArgs(req adapters.RunRequest, creds Credentials, promptText string) []string {
 	var args []string
 
@@ -49,12 +63,7 @@ func buildClaudeArgs(req adapters.RunRequest, creds Credentials, promptText stri
 	//
 	// Both flags verified against the real CLI: --safe-mode succeeds under
 	// an OAuth token, where --bare cannot.
-	switch creds.Kind {
-	case CredentialAPIKey:
-		args = append(args, "--bare")
-	case CredentialOAuthToken:
-		args = append(args, "--safe-mode")
-	}
+	args = append(args, safetyFlagsFor(creds.Kind)...)
 
 	args = append(args, "-p", "--output-format", "json")
 

@@ -236,3 +236,21 @@ func TestBareAndSafeModeAreNeverBothPassed(t *testing.T) {
 		}
 	}
 }
+
+// The sealed result must record exactly the flags the invocation passed:
+// one definition, so an artifact cannot claim a flag the CLI never got.
+func TestSafetyFlagsMatchTheInvocation(t *testing.T) {
+	for _, kind := range []CredentialKind{CredentialAPIKey, CredentialOAuthToken} {
+		args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: kind}, "p")
+		flags := safetyFlagsFor(kind)
+		if len(flags) != 1 {
+			t.Fatalf("%s: expected one safety flag, got %v", kind, flags)
+		}
+		if !containsAdjacent(args, flags[0]) {
+			t.Errorf("%s: recorded %v but the invocation was %v", kind, flags, args)
+		}
+	}
+	if f := safetyFlagsFor(CredentialKind("none")); f != nil {
+		t.Errorf("unknown kind must record no flags, got %v", f)
+	}
+}

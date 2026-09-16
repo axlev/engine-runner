@@ -91,7 +91,13 @@ records it.
 
 This is narrower than it looks. Only two variables are read by the engine —
 `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` (`credentials.go:19-20`) —
-and the resulting credential kind is recorded as `auth_mode`. Arbitrary
+and the resulting credential kind is recorded as `auth_mode`, beside
+`safety_flags` - the customization-disabling flags the invocation actually
+passed (`--bare` under an API key, `--safe-mode` under an OAuth token), so
+the mechanism behind "repository content cannot steer a reviewer" is
+observable in the sealed run rather than inferred from the credential kind.
+Note that `cost_usd` under `oauth_token` is the CLI's estimate of equivalent
+API cost, not an amount billed. Arbitrary
 environment does **not** reach the container: the adapter passes only the
 credential variable plus `ENGINE_ATTEMPT`.
 

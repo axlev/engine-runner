@@ -93,14 +93,15 @@ type telemetryDoc struct {
 }
 
 type stageOutcomeDoc struct {
-	Stage          string `json:"stage"`
-	Adapter        string `json:"adapter"`
-	AdapterVersion string `json:"adapter_version,omitempty"`
-	AuthMode       string `json:"auth_mode,omitempty"`
-	Attempts       int    `json:"attempts"`
-	FinalExitCode  int    `json:"final_exit_code"`
-	StartedAt      string `json:"started_at,omitempty"`
-	FinishedAt     string `json:"finished_at,omitempty"`
+	Stage          string   `json:"stage"`
+	Adapter        string   `json:"adapter"`
+	AdapterVersion string   `json:"adapter_version,omitempty"`
+	AuthMode       string   `json:"auth_mode,omitempty"`
+	SafetyFlags    []string `json:"safety_flags,omitempty"`
+	Attempts       int      `json:"attempts"`
+	FinalExitCode  int      `json:"final_exit_code"`
+	StartedAt      string   `json:"started_at,omitempty"`
+	FinishedAt     string   `json:"finished_at,omitempty"`
 
 	// DurationMS is derived here rather than left for a reader to subtract.
 	// Two timestamps in a sealed artifact are not a measurement until
@@ -199,6 +200,7 @@ func (w *Writer) writeStages(stagesDir, runDir string, attempts []orchestrator.S
 			Adapter:        last.Result.Adapter,
 			AdapterVersion: last.Result.Version,
 			AuthMode:       last.Result.AuthMode,
+			SafetyFlags:    last.Result.SafetyFlags,
 			Attempts:       len(recs),
 			FinalExitCode:  last.Result.ExitCode,
 			StartedAt:      formatTime(last.Result.StartedAt),

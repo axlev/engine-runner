@@ -49,10 +49,15 @@ type Budget struct {
 // Usage reports what a stage execution actually consumed, normalized across
 // vendors so cost and value can be compared stage-to-stage and run-to-run.
 type Usage struct {
-	InputTokens  int     `json:"input_tokens,omitempty"`
-	OutputTokens int     `json:"output_tokens,omitempty"`
-	ToolCalls    int     `json:"tool_calls,omitempty"`
-	CostUSD      float64 `json:"cost_usd,omitempty"`
+	InputTokens  int `json:"input_tokens,omitempty"`
+	OutputTokens int `json:"output_tokens,omitempty"`
+	ToolCalls    int `json:"tool_calls,omitempty"`
+	// CostUSD is the vendor's own figure for the invocation. Under an
+	// OAuth subscription token it is the CLI's ESTIMATE of what the same
+	// work would have cost on the API, not an amount billed to anyone;
+	// under an API key it is the metered cost. Results that quote it must
+	// say which, and auth_mode on the same stage row is what says so.
+	CostUSD float64 `json:"cost_usd,omitempty"`
 }
 
 // RunRequest is the exact, frozen input to one stage execution. It is
@@ -146,14 +151,31 @@ type RunResult struct {
 
 	// AuthMode records WHICH KIND of credential produced this result, never
 	// the credential itself. It matters because the kind changes the
-	// invocation, not just the billing: an api_key run gets claude's --bare
-	// (no hooks, no LSP, no CLAUDE.md discovery), while an oauth_token run
-	// cannot use --bare and runs with the CLI's normal defaults active. A
-	// result produced under oauth_token is therefore not comparable with a
-	// bare one, and that has to be visible in the artifact rather than
-	// remembered. Empty for adapters with no credential concept.
+	// invocation, not just the billing: an api_key run gets claude's
+	// --bare, an oauth_token run gets --safe-mode, and the two disable
+	// different sets of customizations even though both disable CLAUDE.md
+	// auto-discovery. A result produced under one is therefore not
+	// straightforwardly comparable with the other, and that has to be
+	// visible in the artifact rather than remembered. Empty for adapters
+	// with no credential concept.
+	//
+	// This comment used to say an oauth_token run "runs with the CLI's
+	// normal defaults active", which described the behaviour before
+	// --safe-mode was added (see claude/command.go). It was left stale and
+	// said the opposite of what the code does about the one property the
+	// steering guarantee rests on.
 	AuthMode string `json:"auth_mode,omitempty"`
-	Attempt  int    `json:"attempt"`
+
+	// SafetyFlags are the customization-disabling flags actually passed to
+	// the vendor CLI for this attempt - the mechanism behind "repository
+	// content cannot steer a reviewer". AuthMode implies them via a
+	// test-pinned mapping, but an implication is not an observation: a
+	// sealed run that only records the credential kind cannot evidence
+	// which flags ran, and that is exactly what the section 8 steering
+	// check has to read. Empty for adapters that pass no such flags.
+	SafetyFlags []string `json:"safety_flags,omitempty"`
+
+	Attempt int `json:"attempt"`
 }
 
 // AgentAdapter provides vendor polymorphism without creating a generic

@@ -189,6 +189,11 @@
         "adapter_version": {
           "type": "string"
         },
+        "safety_flags": {
+          "type": "array",
+          "description": "The customization-disabling flags actually passed to the vendor CLI (--bare under an API key, --safe-mode under an OAuth token). Recorded so a sealed run evidences the mechanism behind \"repository content cannot steer a reviewer\" rather than leaving it inferred from auth_mode. Optional: manifests sealed before it was recorded lack it.",
+          "items": { "type": "string" }
+        },
         "auth_mode": {
           "type": "string",
           "enum": [
@@ -259,7 +264,8 @@
         },
         "cost_usd": {
           "type": "number",
-          "minimum": 0
+          "minimum": 0,
+          "description": "The vendor's own cost figure. Under auth_mode oauth_token this is the CLI's ESTIMATE of equivalent API cost, not an amount billed; under api_key it is metered. Anything quoting it must say which."
         }
       }
     }

@@ -183,7 +183,8 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 		Adapter:    a.Name(),
 		ExitCode:   result.ExitCode,
 		// Kind only - Credentials.Value is never recorded anywhere.
-		AuthMode: string(a.Credentials.Kind),
+		AuthMode:    string(a.Credentials.Kind),
+		SafetyFlags: safetyFlagsFor(a.Credentials.Kind),
 	}
 
 	// Provenance is attached even to a failed attempt: a stage that died
