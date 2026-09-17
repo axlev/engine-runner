@@ -158,7 +158,7 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 		return adapters.RunResult{}, fmt.Errorf("claude: %w", err)
 	}
 
-	args := buildClaudeArgs(req, a.Credentials, string(promptBytes))
+	args := buildClaudeArgs(req, a.Credentials)
 	spec := runner.ContainerSpec{
 		ContainerName: containerName,
 		Image:         a.Image,
@@ -168,7 +168,8 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 			{HostPath: filepath.Join(req.WorkspacePath, "input"), ContainerPath: "/workspace/input", ReadOnly: true},
 			{HostPath: filepath.Join(req.WorkspacePath, "output"), ContainerPath: "/workspace/output", ReadOnly: false},
 		},
-		Env: map[string]string{a.Credentials.EnvVar(): a.Credentials.Value},
+		Env:   map[string]string{a.Credentials.EnvVar(): a.Credentials.Value},
+		Stdin: promptBytes,
 		// Section 9's escape hatch: "network disabled unless a vendor
 		// invocation specifically requires controlled egress" - reaching
 		// the Anthropic API is exactly that case. Unrestricted egress

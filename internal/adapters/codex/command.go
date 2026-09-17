@@ -11,7 +11,7 @@ import "github.com/axlev/engine-runner/internal/adapters"
 // via -o/--output-last-message - unlike the claude package, there is no
 // envelope to unwrap: whatever text codex writes there becomes the stage's
 // output file verbatim.
-func buildCodexArgs(req adapters.RunRequest, promptText, outputPath string) []string {
+func buildCodexArgs(req adapters.RunRequest, outputPath string) []string {
 	args := []string{
 		"exec",
 		// Our mounted workspace is a plain copied snapshot, not a git
@@ -48,6 +48,10 @@ func buildCodexArgs(req adapters.RunRequest, promptText, outputPath string) []st
 		args = append(args, "-c", "model_reasoning_effort="+req.ReasoningLevel)
 	}
 
-	args = append(args, promptText)
+	// The prompt is NOT passed as an argument; it is piped on stdin. argv
+	// is bounded by MAX_ARG_STRLEN (128 KiB on Linux) and a real case diff
+	// can exceed it. `codex exec` documents that when no PROMPT argument is
+	// given, "instructions are read from stdin" - the same contract the
+	// claude adapter relies on.
 	return args
 }

@@ -1,13 +1,14 @@
 package codex
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/axlev/engine-runner/internal/adapters"
 )
 
 func TestBuildCodexArgsIncludesIsolationFlags(t *testing.T) {
-	args := buildCodexArgs(adapters.RunRequest{}, "prompt", "/workspace/output/reasoner-1.json")
+	args := buildCodexArgs(adapters.RunRequest{}, "/workspace/output/reasoner-1.json")
 	for _, want := range [][]string{
 		{"--skip-git-repo-check"},
 		{"--ephemeral"},
@@ -26,7 +27,7 @@ func TestBuildCodexArgsIncludesIsolationFlags(t *testing.T) {
 
 func TestBuildCodexArgsModelAndEffort(t *testing.T) {
 	req := adapters.RunRequest{Model: "gpt-5.6-sol", ReasoningLevel: "high"}
-	args := buildCodexArgs(req, "prompt", "/out.json")
+	args := buildCodexArgs(req, "/out.json")
 
 	if !containsSubsequence(args, []string{"-m", "gpt-5.6-sol"}) {
 		t.Errorf("expected -m gpt-5.6-sol, got %v", args)
@@ -37,7 +38,7 @@ func TestBuildCodexArgsModelAndEffort(t *testing.T) {
 }
 
 func TestBuildCodexArgsOmitsUnsetOptionalFlags(t *testing.T) {
-	args := buildCodexArgs(adapters.RunRequest{}, "prompt", "/out.json")
+	args := buildCodexArgs(adapters.RunRequest{}, "/out.json")
 	if containsAdjacent(args, "-m") {
 		t.Errorf("did not expect -m when Model is unset, got %v", args)
 	}
@@ -47,9 +48,12 @@ func TestBuildCodexArgsOmitsUnsetOptionalFlags(t *testing.T) {
 }
 
 func TestBuildCodexArgsPromptIsFinalArgument(t *testing.T) {
-	args := buildCodexArgs(adapters.RunRequest{}, "the actual prompt text", "/out.json")
-	if args[len(args)-1] != "the actual prompt text" {
-		t.Errorf("last arg = %q, want the prompt text", args[len(args)-1])
+	const prompt = "the actual prompt text"
+	args := buildCodexArgs(adapters.RunRequest{}, "/out.json")
+	for _, a := range args {
+		if strings.Contains(a, prompt) {
+			t.Fatalf("prompt text reached argv: %v", args)
+		}
 	}
 }
 

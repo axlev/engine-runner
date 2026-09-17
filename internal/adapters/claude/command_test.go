@@ -11,7 +11,7 @@ import (
 
 func TestBuildClaudeArgsAPIKeyIncludesBare(t *testing.T) {
 	req := adapters.RunRequest{Model: "sonnet", ReasoningLevel: "high", Budget: adapters.Budget{MaxCostUSD: 0.5}}
-	args := buildClaudeArgs(req, Credentials{Kind: CredentialAPIKey, Value: "sk-test"}, "prompt text")
+	args := buildClaudeArgs(req, Credentials{Kind: CredentialAPIKey, Value: "sk-test"})
 
 	if !containsAdjacent(args, "--bare") {
 		t.Errorf("expected --bare for API key auth, got %v", args)
@@ -20,7 +20,7 @@ func TestBuildClaudeArgsAPIKeyIncludesBare(t *testing.T) {
 
 func TestBuildClaudeArgsOAuthTokenOmitsBare(t *testing.T) {
 	req := adapters.RunRequest{Model: "sonnet"}
-	args := buildClaudeArgs(req, Credentials{Kind: CredentialOAuthToken, Value: "oauth-test"}, "prompt text")
+	args := buildClaudeArgs(req, Credentials{Kind: CredentialOAuthToken, Value: "oauth-test"})
 
 	if containsAdjacent(args, "--bare") {
 		t.Errorf("did not expect --bare for OAuth token auth (bare mode never reads OAuth), got %v", args)
@@ -28,7 +28,7 @@ func TestBuildClaudeArgsOAuthTokenOmitsBare(t *testing.T) {
 }
 
 func TestBuildClaudeArgsIncludesOutputFormatAndToolRestriction(t *testing.T) {
-	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialAPIKey}, "prompt")
+	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialAPIKey})
 	if !containsSubsequence(args, []string{"--output-format", "json"}) {
 		t.Errorf("expected --output-format json, got %v", args)
 	}
@@ -46,7 +46,7 @@ func TestBuildClaudeArgsIncludesOutputFormatAndToolRestriction(t *testing.T) {
 // hardcoded grant that no fingerprint would record.
 func TestBuildClaudeArgsUsesRequestedToolSet(t *testing.T) {
 	req := adapters.RunRequest{Tools: []string{"Read", "Grep", "Glob"}}
-	args := buildClaudeArgs(req, Credentials{Kind: CredentialAPIKey}, "prompt")
+	args := buildClaudeArgs(req, Credentials{Kind: CredentialAPIKey})
 
 	if !containsSubsequence(args, []string{"--tools", "Read,Grep,Glob"}) {
 		t.Errorf("expected the request's tool set to reach --tools, got %v", args)
@@ -59,7 +59,7 @@ func TestBuildClaudeArgsUsesRequestedToolSet(t *testing.T) {
 func TestBuildClaudeArgsFallsBackToNarrowestToolSet(t *testing.T) {
 	// A hand-built request that never went through LoadAgentSet must not
 	// inherit the CLI's own default, which would widen capability silently.
-	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialAPIKey}, "prompt")
+	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialAPIKey})
 	if !containsSubsequence(args, []string{"--tools", "Read"}) {
 		t.Errorf("expected a tool-less request to fall back to Read, got %v", args)
 	}
@@ -67,7 +67,7 @@ func TestBuildClaudeArgsFallsBackToNarrowestToolSet(t *testing.T) {
 
 func TestBuildClaudeArgsModelAndEffortAndBudget(t *testing.T) {
 	req := adapters.RunRequest{Model: "claude-opus-5", ReasoningLevel: "xhigh", Budget: adapters.Budget{MaxCostUSD: 1.25}}
-	args := buildClaudeArgs(req, Credentials{Kind: CredentialAPIKey}, "prompt")
+	args := buildClaudeArgs(req, Credentials{Kind: CredentialAPIKey})
 
 	if !containsSubsequence(args, []string{"--model", "claude-opus-5"}) {
 		t.Errorf("expected --model claude-opus-5, got %v", args)
@@ -81,7 +81,7 @@ func TestBuildClaudeArgsModelAndEffortAndBudget(t *testing.T) {
 }
 
 func TestBuildClaudeArgsOmitsUnsetOptionalFlags(t *testing.T) {
-	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialAPIKey}, "prompt")
+	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialAPIKey})
 	for _, flag := range []string{"--model", "--effort", "--max-budget-usd"} {
 		if containsAdjacent(args, flag) {
 			t.Errorf("did not expect %s when unset, got %v", flag, args)
@@ -89,10 +89,23 @@ func TestBuildClaudeArgsOmitsUnsetOptionalFlags(t *testing.T) {
 	}
 }
 
-func TestBuildClaudeArgsPromptIsFinalArgument(t *testing.T) {
-	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialAPIKey}, "the actual prompt text")
-	if args[len(args)-1] != "the actual prompt text" {
-		t.Errorf("last arg = %q, want the prompt text", args[len(args)-1])
+// The prompt must NOT reach argv. A prompt large enough to exceed
+// MAX_ARG_STRLEN (128 KiB) failed the whole invocation with "argument list
+// too long" before any model call, so a case with a big diff could not run
+// at all. It is piped on stdin instead; this pins that it stays off argv.
+func TestBuildClaudeArgsNeverPutsThePromptInArgv(t *testing.T) {
+	const prompt = "the actual prompt text"
+	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialAPIKey})
+	for _, a := range args {
+		if strings.Contains(a, prompt) {
+			t.Fatalf("prompt text reached argv: %v", args)
+		}
+	}
+	// Nothing prompt-sized belongs in argv at any size.
+	for _, a := range args {
+		if len(a) > 4096 {
+			t.Fatalf("an argv element is %d bytes; the prompt must travel on stdin", len(a))
+		}
 	}
 }
 
@@ -182,7 +195,7 @@ func TestVendorJSONSchemaDegradesRatherThanFailing(t *testing.T) {
 
 // The flag must only appear when a schema was actually supplied.
 func TestJSONSchemaFlagOmittedWithoutASchema(t *testing.T) {
-	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialAPIKey}, "prompt")
+	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialAPIKey})
 	for _, a := range args {
 		if a == "--json-schema" {
 			t.Fatalf("--json-schema passed with no schema available: %v", args)
@@ -207,7 +220,7 @@ func TestRepositoryContentCannotSteerTheReviewer(t *testing.T) {
 		{Credentials{Kind: CredentialAPIKey}, "--bare"},
 		{Credentials{Kind: CredentialOAuthToken}, "--safe-mode"},
 	} {
-		args := buildClaudeArgs(adapters.RunRequest{}, tc.kind, "prompt")
+		args := buildClaudeArgs(adapters.RunRequest{}, tc.kind)
 		found := false
 		for _, a := range args {
 			if a == tc.want {
@@ -225,7 +238,7 @@ func TestRepositoryContentCannotSteerTheReviewer(t *testing.T) {
 // both would make an OAuth run fail at authentication.
 func TestBareAndSafeModeAreNeverBothPassed(t *testing.T) {
 	for _, kind := range []CredentialKind{CredentialAPIKey, CredentialOAuthToken} {
-		args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: kind}, "prompt")
+		args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: kind})
 		var bare, safe bool
 		for _, a := range args {
 			bare = bare || a == "--bare"
@@ -241,7 +254,7 @@ func TestBareAndSafeModeAreNeverBothPassed(t *testing.T) {
 // one definition, so an artifact cannot claim a flag the CLI never got.
 func TestSafetyFlagsMatchTheInvocation(t *testing.T) {
 	for _, kind := range []CredentialKind{CredentialAPIKey, CredentialOAuthToken} {
-		args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: kind}, "p")
+		args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: kind})
 		flags := safetyFlagsFor(kind)
 		if len(flags) != 1 {
 			t.Fatalf("%s: expected one safety flag, got %v", kind, flags)
@@ -258,7 +271,7 @@ func TestSafetyFlagsMatchTheInvocation(t *testing.T) {
 // A11's probes must run with no tools at all. An unset grant still means
 // Read; only NoTools means none, and it reaches the CLI as --tools "".
 func TestNoToolsWithholdsEveryTool(t *testing.T) {
-	args := buildClaudeArgs(adapters.RunRequest{NoTools: true}, Credentials{Kind: CredentialOAuthToken}, "p")
+	args := buildClaudeArgs(adapters.RunRequest{NoTools: true}, Credentials{Kind: CredentialOAuthToken})
 	for i, a := range args {
 		if a == "--tools" {
 			if i+1 >= len(args) || args[i+1] != "" {
@@ -271,7 +284,7 @@ func TestNoToolsWithholdsEveryTool(t *testing.T) {
 }
 
 func TestUnsetToolsStillMeansRead(t *testing.T) {
-	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialOAuthToken}, "p")
+	args := buildClaudeArgs(adapters.RunRequest{}, Credentials{Kind: CredentialOAuthToken})
 	for i, a := range args {
 		if a == "--tools" && i+1 < len(args) && args[i+1] == "Read" {
 			return

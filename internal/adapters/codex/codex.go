@@ -98,7 +98,7 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 	}
 	hostOutputPath := filepath.Join(req.WorkspacePath, "output", outputFile)
 
-	args := buildCodexArgs(req, string(promptBytes), containerOutputPath)
+	args := buildCodexArgs(req, containerOutputPath)
 	spec := runner.ContainerSpec{
 		ContainerName: containerName,
 		Image:         a.Image,
@@ -108,7 +108,8 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 			{HostPath: filepath.Join(req.WorkspacePath, "input"), ContainerPath: "/workspace/input", ReadOnly: true},
 			{HostPath: filepath.Join(req.WorkspacePath, "output"), ContainerPath: "/workspace/output", ReadOnly: false},
 		},
-		Env: map[string]string{a.Credentials.EnvVar(): a.Credentials.Value},
+		Env:   map[string]string{a.Credentials.EnvVar(): a.Credentials.Value},
+		Stdin: promptBytes,
 		// Same section 9 exception as the claude adapter: reaching the
 		// OpenAI API requires egress. See claude.go's identical comment
 		// for the deferred controlled-egress hardening this needs.

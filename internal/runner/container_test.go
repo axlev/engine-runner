@@ -2,6 +2,7 @@ package runner
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -164,4 +165,45 @@ func containsSubsequence(got, want []string) bool {
 		}
 	}
 	return false
+}
+
+// A prompt larger than the kernel's per-argument limit is exactly the case
+// that failed: as an argv element it aborts the invocation with "argument
+// list too long" before any model call. On stdin it has no such limit, so
+// the spec must carry it there and ask docker to keep stdin open.
+func TestLargeStdinIsPipedAndNeverEntersArgv(t *testing.T) {
+	const big = 256 * 1024 // twice MAX_ARG_STRLEN
+	spec := baseSpec()
+	spec.Stdin = []byte(strings.Repeat("x", big))
+
+	args, err := BuildDockerArgs(spec)
+	if err != nil {
+		t.Fatalf("BuildDockerArgs: %v", err)
+	}
+	var sawI bool
+	for _, a := range args {
+		if a == "-i" {
+			sawI = true
+		}
+		if len(a) > 4096 {
+			t.Fatalf("argv element of %d bytes: the prompt must not reach argv", len(a))
+		}
+	}
+	if !sawI {
+		t.Error("-i missing: docker would close stdin and the CLI would get no prompt")
+	}
+}
+
+// Without stdin the flag must not appear: an unnecessary -i would change the
+// invocation for every pipeline stage that does not need one.
+func TestNoStdinMeansNoDashI(t *testing.T) {
+	args, err := BuildDockerArgs(baseSpec())
+	if err != nil {
+		t.Fatalf("BuildDockerArgs: %v", err)
+	}
+	for _, a := range args {
+		if a == "-i" {
+			t.Errorf("-i passed with no stdin: %v", args)
+		}
+	}
 }

@@ -63,6 +63,16 @@ type ContainerSpec struct {
 	NetworkPolicy  NetworkPolicy
 	ReadOnlyRootFS bool
 	Limits         ResourceLimits
+
+	// Stdin is piped to the container's standard input. It carries the
+	// prompt: a prompt passed as an argv element is bounded by the
+	// kernel's per-argument limit (MAX_ARG_STRLEN, 128 KiB on Linux), and
+	// a real case diff can exceed it - the container then fails with
+	// "argument list too long" before any model call, so the failure is
+	// free but the case cannot run at all. Stdin has no such limit.
+	//
+	// When set, BuildDockerArgs adds -i so docker keeps stdin open.
+	Stdin []byte
 }
 
 // forbiddenHostPathPrefixes are the exact paths section 9 says must never
@@ -120,6 +130,11 @@ func BuildDockerArgs(spec ContainerSpec) ([]string, error) {
 	}
 
 	args := []string{"run", "--rm", "--name", spec.ContainerName}
+
+	// -i keeps stdin open so a piped prompt reaches the CLI.
+	if len(spec.Stdin) > 0 {
+		args = append(args, "-i")
+	}
 
 	if spec.NetworkPolicy == NetworkDisabled {
 		args = append(args, "--network", "none")

@@ -33,7 +33,7 @@ func safetyFlagsFor(kind CredentialKind) []string {
 	return nil
 }
 
-func buildClaudeArgs(req adapters.RunRequest, creds Credentials, promptText string) []string {
+func buildClaudeArgs(req adapters.RunRequest, creds Credentials) []string {
 	var args []string
 
 	// Both credential kinds must run with repository content unable to
@@ -116,8 +116,12 @@ func buildClaudeArgs(req adapters.RunRequest, creds Credentials, promptText stri
 		args = append(args, "--json-schema", schema)
 	}
 
-	// The prompt is always the final positional argument.
-	args = append(args, promptText)
+	// The prompt is NOT passed as an argument. argv is bounded by
+	// MAX_ARG_STRLEN (128 KiB on Linux) and a real case diff can exceed it,
+	// which failed the whole invocation with "argument list too long"
+	// before any model call. `claude -p` reads the prompt from stdin when
+	// no positional prompt is given (verified against the real CLI), so the
+	// adapter pipes it there instead. Same bytes, no limit.
 	return args
 }
 

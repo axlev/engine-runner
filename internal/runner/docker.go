@@ -78,6 +78,9 @@ func (d *DockerRunner) Run(ctx context.Context, spec ContainerSpec) (Result, err
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	if len(spec.Stdin) > 0 {
+		cmd.Stdin = bytes.NewReader(spec.Stdin)
+	}
 
 	if err := cmd.Start(); err != nil {
 		return Result{}, fmt.Errorf("container: starting docker run: %w", err)
