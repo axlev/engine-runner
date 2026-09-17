@@ -66,6 +66,11 @@ type RenderMeta struct {
 	ProtocolHashes map[string]string // arm -> protocol hash
 	PromptHashes   map[string]string // arm/stage -> prompt hash
 	CostNote       string
+	// ProvenanceNotes are free-text lines recorded under Provenance. This
+	// document is generated, so a fact written into it by hand is lost on
+	// the next render; anything that must survive belongs here, passed in
+	// at render time.
+	ProvenanceNotes []string
 	// Draft marks a scaffold render: the document says so at the top, so a
 	// half-filled template cannot be mistaken for a finding.
 	Draft bool
@@ -533,6 +538,14 @@ func renderFingerprints(w func(string, ...any), r Report, meta RenderMeta) {
 		w("| verdict rule | `%v` |", rv)
 	}
 	w("")
+	for _, n := range meta.ProvenanceNotes {
+		if n != "" {
+			w("- %s", n)
+		}
+	}
+	if len(meta.ProvenanceNotes) > 0 {
+		w("")
+	}
 	w("### Rules as applied")
 	w("")
 	for _, k := range sortedKeys(anyMapToString(r.Rules)) {

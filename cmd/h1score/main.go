@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/axlev/engine-runner/internal/h1score"
 	"github.com/axlev/engine-runner/internal/probe"
@@ -163,6 +164,8 @@ func renderMode(scoredPath string, rest []string) {
 	draft := fs.Bool("draft", false, "mark the document a draft scaffold: numbers are fixture or partial")
 	engineCommit := fs.String("engine-commit", "", "engine commit the arms ran at")
 	cohortRecords := fs.String("cohort-records", "", "cohort manifest records_sha256")
+	var notes stringList
+	fs.Var(&notes, "note", "a provenance line to record verbatim; repeatable. The document is generated, so notes belong here rather than edited into it")
 	_ = fs.Parse(rest)
 
 	raw, err := os.ReadFile(scoredPath)
@@ -183,12 +186,23 @@ func renderMode(scoredPath string, rest []string) {
 	}
 
 	meta := h1score.RenderMeta{
-		SourceFile:     filepath.Base(scoredPath),
-		EngineCommit:   *engineCommit,
-		CohortRecords:  *cohortRecords,
-		Draft:          *draft,
-		ProtocolHashes: map[string]string{},
-		PromptHashes:   map[string]string{},
+		SourceFile:      filepath.Base(scoredPath),
+		EngineCommit:    *engineCommit,
+		CohortRecords:   *cohortRecords,
+		Draft:           *draft,
+		ProvenanceNotes: notes,
+		ProtocolHashes:  map[string]string{},
+		PromptHashes:    map[string]string{},
 	}
 	fmt.Print(h1score.Render(report, labels, meta))
+}
+
+// stringList collects a repeatable flag in the order given.
+type stringList []string
+
+func (s *stringList) String() string { return strings.Join(*s, "; ") }
+
+func (s *stringList) Set(v string) error {
+	*s = append(*s, v)
+	return nil
 }

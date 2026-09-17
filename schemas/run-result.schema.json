@@ -102,6 +102,11 @@
           "type": "string",
           "minLength": 1
         },
+        "engine_commit": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The engine's own git revision, read from the binary's build stamp or, when there is none (go run), from the tree it ran in. Suffixed \"-dirty\" when that tree had uncommitted changes, \"-unknown\" when cleanliness could not be determined. Optional: manifests sealed before it was recorded lack it, and it is absent rather than invented when provenance cannot be established."
+        },
         "bundle_schema_versions": {
           "type": "object",
           "description": "The schema_version each pinned bundle document carried, verbatim (reviewer/metadata.json, control/manifest.json). Not normalised, so a cohort mixing reviewer-metadata/v1 and /v2 is visible here. Optional: manifests sealed before it was recorded lack it.",

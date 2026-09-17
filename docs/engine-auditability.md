@@ -26,6 +26,7 @@ end here for completeness.
 | CLI version inside the image | `adapter_versions` |
 | image content digest | `container_digests` |
 | credential kind | `auth_mode`, per stage record |
+| the engine's own code | `engine_commit` |
 
 The last four were added in `381aee2`. Before that the tool grant was
 hardcoded in adapter code, `adapter_versions` read `"claude/"` because the
@@ -44,6 +45,34 @@ plausible wrong version does not.
 **`container_digests` records the digest, not the tag.** A tag can be
 repointed at new content, so two runs naming `adapter-claude:2.1.263` may
 have executed different code. The digest is the only answer to what ran.
+
+**`engine_commit` is read from the build, not passed in.** Every other entry
+above pins an input to the engine; this one pins the engine itself, which was
+the last thing a sealed run could not identify. It is taken from the binary's
+VCS stamp, or - when there is none, which is the case under `go run`, and
+`cmd/h1run` launches every sealed case with `go run ./cmd/bench` - from the
+tree the process ran in. A tree with uncommitted changes is recorded
+`<sha>-dirty`, because an uncommitted engine is exactly the provenance a
+reader most needs to see, and one whose cleanliness cannot be determined is
+`<sha>-unknown`. Nothing is invented: when provenance cannot be established
+the field is absent.
+
+**Prompt delivery changed mid-cohort, and the bytes did not.** Up to
+`affb724` both adapters passed the prompt as the final argv element; from
+`8023221` it is piped on stdin, because a prompt over the kernel's 128 KiB
+per-argument limit aborted the invocation before any model call. H1's probes
+1-19 were sealed under argv delivery and probe 20 and every arm run under
+stdin. `prompt_hashes` is taken over the prompt bytes, which are identical
+either way, so the hashes do not distinguish the two - this paragraph is the
+record that they differed at all.
+
+The H1 results document is generated (`h1score -render`), so a fact written
+into it by hand is lost on the next render. Pass it instead:
+
+```
+h1score -render h1-score.json \
+  -note 'probes 1-19 delivered the prompt via argv (engine <= affb724); probe 20 and all arm runs via stdin (engine >= 8023221); identical bytes'
+```
 
 ## Gaps
 

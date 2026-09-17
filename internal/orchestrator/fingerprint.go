@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // Fingerprints is what makes a run reproducible and auditable after the
@@ -18,7 +21,18 @@ import (
 // from the protocol's declared version strings alone, which could drift
 // from the file on disk without anyone noticing.
 type Fingerprints struct {
-	ProtocolHash      string            `json:"protocol_hash"`
+	ProtocolHash string `json:"protocol_hash"`
+
+	// EngineCommit is this engine's own git revision, taken from the
+	// binary's embedded build info rather than supplied by a caller, so a
+	// sealed run records the code that actually produced it and not a
+	// claim typed alongside it. A build from a dirty tree is suffixed
+	// "-dirty": an uncommitted engine is exactly the provenance a reader
+	// most needs to see. Empty when the binary carries no VCS stamp (`go
+	// run`, or a test binary), which is why it is omitempty rather than
+	// an invented value.
+	EngineCommit string `json:"engine_commit,omitempty"`
+
 	AgentConfigHashes map[string]string `json:"agent_config_hashes,omitempty"`
 	SchemaVersions    map[string]string `json:"schema_versions"`
 	PromptHashes      map[string]string `json:"prompt_hashes"`
@@ -65,6 +79,7 @@ func sha256HexFile(path string) (string, error) {
 // are filled in separately from the run's attempt records.
 func computeStaticFingerprints(protocolPath, agentSetPath, repoRoot, bundleRoot string, protocol *Protocol, agents AgentSet) (Fingerprints, error) {
 	fp := Fingerprints{
+		EngineCommit:      engineCommit(),
 		SchemaVersions:    map[string]string{},
 		PromptHashes:      map[string]string{},
 		AdapterVersions:   map[string]string{},
@@ -162,4 +177,73 @@ func computeStaticFingerprints(protocolPath, agentSetPath, repoRoot, bundleRoot 
 	}
 
 	return fp, nil
+}
+
+// engineCommit identifies the engine that produced this run. Nothing is
+// passed at the command line and nothing can be mistyped, which is the
+// point: the run records the code that ran it rather than a claim made
+// beside it. A dirty tree is suffixed "-dirty" - an uncommitted engine is
+// exactly the provenance a reader most needs to see.
+//
+// Two sources, because one alone is silently empty on the path that matters.
+// `go build` stamps vcs.revision into the binary, but `go run` does not
+// (verified), and cmd/h1run launches every sealed case with `go run
+// ./cmd/bench`. So when there is no stamp we ask git directly: under `go
+// run` the working tree IS the engine that ran, which makes git the
+// accurate source there, not a guess at one.
+//
+// Memoised: this shells out, and a batch seals many runs per process.
+var engineCommitOnce struct {
+	sync.Once
+	value string
+}
+
+func engineCommit() string {
+	engineCommitOnce.Do(func() { engineCommitOnce.value = resolveEngineCommit() })
+	return engineCommitOnce.value
+}
+
+func resolveEngineCommit() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		var rev, modified string
+		for _, s := range info.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				rev = s.Value
+			case "vcs.modified":
+				modified = s.Value
+			}
+		}
+		if rev != "" {
+			if modified == "true" {
+				return rev + "-dirty"
+			}
+			return rev
+		}
+	}
+	return gitCommit()
+}
+
+// gitCommit reports HEAD of the tree the process is running in, or "" if
+// there is no git, no repository, or anything else unexpected. Provenance
+// that cannot be established is absent, never approximated.
+func gitCommit() string {
+	rev, err := exec.Command("git", "rev-parse", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	head := strings.TrimSpace(string(rev))
+	if head == "" {
+		return ""
+	}
+	status, err := exec.Command("git", "status", "--porcelain").Output()
+	if err != nil {
+		// HEAD is known but cleanliness is not; say so rather than imply
+		// a clean tree.
+		return head + "-unknown"
+	}
+	if len(strings.TrimSpace(string(status))) > 0 {
+		return head + "-dirty"
+	}
+	return head
 }

@@ -159,3 +159,15 @@ func TestRenderRecordsTheJudgeDivergenceFromThePilot(t *testing.T) {
 		}
 	}
 }
+
+// The results document is generated, so a fact recorded in it by hand is
+// lost on the next render. Notes passed at render time must survive.
+func TestProvenanceNotesAreRendered(t *testing.T) {
+	const note = "probes 1-19 delivered the prompt via argv; probe 20 and all arm runs via stdin; identical bytes"
+	out := Render(Report{SchemaVersion: SchemaVersion}, nil, RenderMeta{
+		ProvenanceNotes: []string{note},
+	})
+	if !strings.Contains(out, note) {
+		t.Errorf("provenance note missing from the rendered document")
+	}
+}
