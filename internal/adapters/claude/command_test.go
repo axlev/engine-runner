@@ -3,6 +3,7 @@ package claude
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -291,4 +292,104 @@ func TestUnsetToolsStillMeansRead(t *testing.T) {
 		}
 	}
 	t.Fatalf("expected --tools Read for an unset grant, got %v", args)
+}
+
+// The vendor rejects oneOf/allOf/anyOf at the top level of a tool
+// input_schema, which failed every arm run at reasoner-1: h1-review-a
+// carries a top-level allOf and both arms use that schema. Structure must
+// survive; the constraint must not be sent.
+func TestVendorJSONSchemaDropsTopLevelCombinators(t *testing.T) {
+	raw := []byte(`{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"type": "object",
+		"required": ["findings"],
+		"properties": {"findings": {"type": "array"}},
+		"allOf": [{"if": {"properties": {"findings": {"maxItems": 0}}},
+		           "then": {"required": ["empty_reason"]}}]
+	}`)
+	got := vendorJSONSchema(raw)
+	if got == "" {
+		t.Fatal("schema was dropped entirely")
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(got), &doc); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	for _, k := range []string{"allOf", "anyOf", "oneOf", "if", "then", "else"} {
+		if _, bad := doc[k]; bad {
+			t.Errorf("%q survived at the top level; the API rejects it", k)
+		}
+	}
+	// The shape the model must produce has to survive the stripping.
+	if doc["type"] != "object" {
+		t.Error("type was lost")
+	}
+	if _, ok := doc["properties"]; !ok {
+		t.Error("properties were lost")
+	}
+	if _, ok := doc["required"]; !ok {
+		t.Error("required was lost")
+	}
+}
+
+// The real schema that failed must now be sendable.
+func TestRealReviewASchemaIsSendable(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "schemas", "h1-review-a.schema.json"))
+	if err != nil {
+		t.Skipf("schema not readable: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(vendorJSONSchema(raw)), &doc); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	for _, k := range []string{"allOf", "anyOf", "oneOf"} {
+		if _, bad := doc[k]; bad {
+			t.Errorf("h1-review-a still sends %q at the top level", k)
+		}
+	}
+}
+
+// Every schema this repository ships must survive the vendor projection
+// with no combinator left at its root. The failure this guards was found by
+// a paid arm run, not by a test: -dry-run uses the fixture adapter, which
+// never projects a schema and never calls the API, so a schema the vendor
+// cannot accept passes every rehearsal and fails only when it costs money.
+// This closes that gap for the whole schemas/ directory at once, so a new
+// or edited schema cannot reintroduce it silently.
+func TestEveryShippedSchemaProjectsWithoutRootCombinators(t *testing.T) {
+	dir := filepath.Join("..", "..", "..", "schemas")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	var checked int
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Errorf("%s: %v", e.Name(), err)
+			continue
+		}
+		projected := vendorJSONSchema(raw)
+		if projected == "" {
+			// Nothing is sent for this schema, so nothing can be rejected.
+			continue
+		}
+		var doc map[string]any
+		if err := json.Unmarshal([]byte(projected), &doc); err != nil {
+			t.Errorf("%s: projection is not valid JSON: %v", e.Name(), err)
+			continue
+		}
+		checked++
+		for _, k := range []string{"allOf", "anyOf", "oneOf"} {
+			if _, bad := doc[k]; bad {
+				t.Errorf("%s projects with %q at the top level; the API rejects that and every run using this schema fails at the first stage", e.Name(), k)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no schemas were projected; the test is not exercising anything")
+	}
 }

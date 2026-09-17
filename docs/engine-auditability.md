@@ -147,6 +147,34 @@ recorded $0.005638 against a $0.002 cap. The CLI stops shortly after
 exceeding rather than at, which is why sealed costs read 106% and 107% of cap
 rather than exactly 100%.
 
+### 6. `-dry-run` does not exercise the vendor schema projection
+
+The fixture adapter never builds a CLI invocation, so `-dry-run` never
+projects a stage's `output_schema` through `vendorJSONSchema` and never sends
+it anywhere. Everything a dry run does prove — gate loading, case discovery,
+ordering, resume, sealing — it proves honestly; what it cannot prove is that
+the resulting invocation is one the vendor will accept.
+
+This was found the expensive way. `schemas/h1-review-a.schema.json` carries a
+top-level `allOf`, which the API refuses in a tool `input_schema`:
+
+```
+400 tools.N.custom.input_schema: input_schema does not support oneOf, allOf,
+or anyOf at the top level
+```
+
+Arm G's only stage and arm T's `reasoner-1` both use that schema, so every
+arm run failed at the first stage while every dry run over the same cohort
+passed. The projection now drops root combinators (they are constraints, and
+the caller still validates the full schema), and
+`TestEveryShippedSchemaProjectsWithoutRootCombinators` projects every file in
+`schemas/` and fails if any root combinator survives - so this class is
+caught by `go test` rather than by a paid batch.
+
+The general point stands and is not fixed: a green dry run says nothing about
+vendor acceptance. Anything that shapes the real invocation - flags, schema
+projection, argument construction - is exercised only by a real call.
+
 ## The ceiling: the served model can move
 
 `claude-opus-5` is a name resolved server-side, and the review container runs

@@ -136,6 +136,25 @@ func buildClaudeArgs(req adapters.RunRequest, creds Credentials) []string {
 // schemas rely on them for finding/evidence_ref.
 var metaKeysClaudeCannotResolve = []string{"$schema", "$id", "title"}
 
+// combinatorsRejectedAtSchemaRoot are the JSON Schema keywords the vendor
+// refuses at the top level of a tool input_schema:
+//
+//	400 tools.N.custom.input_schema: input_schema does not support oneOf,
+//	allOf, or anyOf at the top level
+//
+// They are CONSTRAINTS, not structure. h1-review-a carries one - "if
+// findings is empty, empty_reason is required" - and sending it failed every
+// arm run at reasoner-1 before this, for both arms, because both use that
+// schema. Dropping them costs nothing that is not recovered immediately:
+// the vendor still receives type, properties and required (the shape the
+// model has to produce), and the caller still validates the response
+// against the FULL schema, conditional included, so a response that
+// violates the dropped rule is still rejected here.
+//
+// Top level only. The error is specific to the root, and nested combinators
+// inside properties are accepted.
+var combinatorsRejectedAtSchemaRoot = []string{"allOf", "anyOf", "oneOf", "if", "then", "else"}
+
 // vendorJSONSchema converts one of our schemas into the form claude's
 // --json-schema accepts, returning "" when there is nothing usable to send.
 // A schema that will not marshal is skipped rather than fatal: the stage
@@ -150,6 +169,9 @@ func vendorJSONSchema(raw []byte) string {
 		return ""
 	}
 	for _, k := range metaKeysClaudeCannotResolve {
+		delete(doc, k)
+	}
+	for _, k := range combinatorsRejectedAtSchemaRoot {
 		delete(doc, k)
 	}
 	out, err := json.Marshal(doc)
