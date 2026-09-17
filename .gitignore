@@ -24,3 +24,9 @@ tmp
 *-evaluator-only/
 correlated-report.json
 patches/*.patch
+
+# Local credential file. AGENTS.md: source control here "must never hold
+# credentials" - and unlike the evaluator patterns below, this one guards a
+# secret that is live the moment it leaks, so it is ignored rather than
+# relied on to be noticed in review.
+.env
