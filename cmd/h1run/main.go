@@ -44,6 +44,7 @@ func main() {
 	cohortRecords := flag.String("cohort-records", "", "the cohort manifest's records_sha256; required with -probe-gate, which is refused if it was written for a different cohort")
 	armsFlag := flag.String("arms", "T,G", "arms to run, in order")
 	concurrency := flag.Int("concurrency", 2, "cases in flight at once")
+	benchBin := flag.String("bench-bin", "", "prebuilt cmd/bench binary to exec per case. Without it every case runs `go run ./cmd/bench`, which invokes the Go compiler once per case - concurrency copies of it at a time, which is enough memory pressure to get a long batch killed")
 	only := flag.String("only", "", "comma-separated case ids (default: every case in the cohort)")
 	stallWait := flag.Duration("stall-wait", 15*time.Minute, "how long to wait out a rate limit when the vendor names no reset time")
 	maxStalls := flag.Int("max-stalls", 3, "how many times one case waits out a rate limit before being left for the next run")
@@ -104,7 +105,7 @@ func main() {
 		StallWait:       *stallWait,
 		Progress:        progressPrinter(),
 		Run: func(ctx context.Context, arm batch.Arm, caseID, bundlePath, runID string) (string, float64, error) {
-			return runBench(ctx, arm, caseID, bundlePath, runID, *agents, *image, *resultsRoot, *dryRun)
+			return runBench(ctx, arm, caseID, bundlePath, runID, *agents, *image, *resultsRoot, *benchBin, *dryRun)
 		},
 	}
 
@@ -150,7 +151,7 @@ func progressPrinter() func(batch.Summary) {
 // a case is run and sealed. Calling the orchestrator directly here would
 // create a second path that could drift from the one every other result
 // was produced by.
-func runBench(ctx context.Context, arm batch.Arm, caseID, bundlePath, runID, agents, image, resultsRoot string, dryRun bool) (string, float64, error) {
+func runBench(ctx context.Context, arm batch.Arm, caseID, bundlePath, runID, agents, image, resultsRoot, benchBin string, dryRun bool) (string, float64, error) {
 	args := []string{"run", "./cmd/bench",
 		"-protocol", arm.ProtocolPath,
 		"-bundle", bundlePath,
@@ -168,7 +169,15 @@ func runBench(ctx context.Context, arm batch.Arm, caseID, bundlePath, runID, age
 		args = append(args, "-agents", agents, "-adapter-image", image)
 	}
 
-	cmd := exec.CommandContext(ctx, "go", args...)
+	// A prebuilt binary is exec'd directly; otherwise `go run` compiles
+	// cmd/bench again for every case. The compiler is the single largest
+	// memory consumer in the batch and there are `concurrency` of it at
+	// once, which is what got a 78-case run killed part way.
+	name, rest := "go", args
+	if benchBin != "" {
+		name, rest = benchBin, args[2:]
+	}
+	cmd := exec.CommandContext(ctx, name, rest...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// The vendor's message is in the output, and the batch layer needs
