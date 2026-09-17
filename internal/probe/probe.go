@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/axlev/engine-runner/internal/contamscan"
 )
@@ -306,4 +307,80 @@ func hitKinds(r Report) string {
 		out += h.Kind
 	}
 	return out
+}
+
+// GateSchemaVersion is the evaluator's published A11 decision, one status per
+// case and no probe content.
+const GateSchemaVersion = "contamination-probe-gate/v1"
+
+// The three statuses a case may carry. Anything else is a malformed gate
+// rather than a permissive default.
+const (
+	GateClean      = "clean"
+	GateVoid       = "void"
+	GateUnresolved = "unresolved"
+)
+
+// Gate is contamination-probe-gate/v1.
+//
+// It exists so the runner can honour the A11 gate without opening a probe
+// report. A report carries the symptom prose and the model's own answers -
+// both oracle-grade - so the reviewer side opening one just to learn a yes/no
+// is a blinding hole held shut only by convention. The gate is the yes/no on
+// its own: the evaluator decides, publishes this, and the runner never opens
+// anything under an -evaluator-inputs directory.
+type Gate struct {
+	SchemaVersion string            `json:"schema_version"`
+	RecordsSHA256 string            `json:"records_sha256"`
+	Cases         map[string]string `json:"cases"`
+	Voided        []string          `json:"voided"`
+}
+
+// LoadGate reads a gate, checks it was written for the cohort in hand, and
+// checks it covers every case the run is about to touch.
+//
+// cohortRecords is required. A gate whose records_sha256 is compared against
+// nothing is a gate that will silently authorise the wrong cohort, so there
+// is no empty-string escape from the check.
+//
+// Coverage fails CLOSED but LOUD. A case absent from the map is certainly not
+// "clean", but silently refusing it would run a 40-case cohort as whatever
+// subset the evaluator happened to probe - only positives are probed - and
+// that looks like a successful run while being a different experiment. So
+// absence is an error naming the missing ids: the evaluator states a status
+// for every case, including the negatives it never probed.
+func LoadGate(path, cohortRecords string, caseIDs []string) (Gate, error) {
+	var g Gate
+	if err := readJSON(path, &g); err != nil {
+		return Gate{}, err
+	}
+	if g.SchemaVersion != GateSchemaVersion {
+		return Gate{}, fmt.Errorf("probe: %s is %q, want %s", path, g.SchemaVersion, GateSchemaVersion)
+	}
+	if cohortRecords == "" {
+		return Gate{}, fmt.Errorf("probe: a probe gate needs the cohort's records_sha256 to check %s against", path)
+	}
+	if g.RecordsSHA256 != cohortRecords {
+		return Gate{}, fmt.Errorf("probe: gate %s was written for cohort records_sha256 %q but the cohort in hand is %q; refusing the whole run",
+			path, g.RecordsSHA256, cohortRecords)
+	}
+	var missing, bad []string
+	for _, id := range caseIDs {
+		switch g.Cases[id] {
+		case GateClean, GateVoid, GateUnresolved:
+		case "":
+			missing = append(missing, id)
+		default:
+			bad = append(bad, fmt.Sprintf("%s=%q", id, g.Cases[id]))
+		}
+	}
+	if len(bad) > 0 {
+		return Gate{}, fmt.Errorf("probe: gate %s carries statuses that are not %s/%s/%s: %s",
+			path, GateClean, GateVoid, GateUnresolved, strings.Join(bad, ", "))
+	}
+	if len(missing) > 0 {
+		return Gate{}, fmt.Errorf("probe: gate %s states no status for %d case(s) in this run: %s; absence is not %q, the evaluator must state one per case, negatives included",
+			path, len(missing), strings.Join(missing, ", "), GateClean)
+	}
+	return g, nil
 }

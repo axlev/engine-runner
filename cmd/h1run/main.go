@@ -5,6 +5,7 @@
 //	h1run -cohort miner/output/frr-h1-cohort -agents configs/agents/h1-opus-wide.yaml \
 //	      -adapter-image engine-runner/adapter-claude:2.1.263 \
 //	      -probes <probe output dir> -probe-verdicts <verdict dir> \
+//	      (or -probe-gate <gate file> -cohort-records <sha>) \
 //	      -results-root build/results -out <run record>
 //
 // Arms run in sequence deliberately: if the subscription window runs dry
@@ -39,6 +40,8 @@ func main() {
 	resultsRoot := flag.String("results-root", "build/results", "root under which sealed runs are written")
 	probesDir := flag.String("probes", "", "cmd/probe output directory; cases it voided or left unresolved are refused")
 	verdictsDir := flag.String("probe-verdicts", "", "evaluator verdict directory (contamination-probe-verdict/v1)")
+	probeGate := flag.String("probe-gate", "", "evaluator gate file (contamination-probe-gate/v1): one clean|void|unresolved per case. Alternative to -probes/-probe-verdicts that never opens a probe report")
+	cohortRecords := flag.String("cohort-records", "", "the cohort manifest's records_sha256; required with -probe-gate, which is refused if it was written for a different cohort")
 	armsFlag := flag.String("arms", "T,G", "arms to run, in order")
 	concurrency := flag.Int("concurrency", 2, "cases in flight at once")
 	only := flag.String("only", "", "comma-separated case ids (default: every case in the cohort)")
@@ -66,8 +69,19 @@ func main() {
 		check(fmt.Errorf("no case-*/ directories under %s", *cohort))
 	}
 
-	gate, err := buildGate(*probesDir, *verdictsDir, cases)
-	check(err)
+	if *probeGate != "" && (*probesDir != "" || *verdictsDir != "") {
+		check(fmt.Errorf("-probe-gate replaces -probes/-probe-verdicts; pass one route or the other, not both"))
+	}
+	var gate batch.ProbeGate
+	if *probeGate != "" {
+		var g probe.Gate
+		gate, g, err = gateFromFile(*probeGate, *cohortRecords, cases)
+		check(err)
+		fmt.Printf("h1run: probe gate %s accepted for cohort records_sha256 %s\n", *probeGate, g.RecordsSHA256)
+	} else {
+		gate, err = buildGate(*probesDir, *verdictsDir, cases)
+		check(err)
+	}
 
 	arms, err := buildArms(splitCSV(*armsFlag), *dryRun)
 	check(err)
@@ -259,6 +273,27 @@ func buildGate(probesDir, verdictsDir string, cases []string) (batch.ProbeGate, 
 		}
 	}
 	return gate, nil
+}
+
+// gateFromFile builds the gate from the evaluator's published decision
+// instead of from probe reports. The runner learns clean/void/unresolved and
+// nothing else - no symptom prose, no model answers, no file under an
+// -evaluator-inputs directory opened by anything on this side.
+func gateFromFile(path, cohortRecords string, cases []string) (batch.ProbeGate, probe.Gate, error) {
+	gate := batch.ProbeGate{Voided: map[string]bool{}, Unresolved: map[string]bool{}}
+	g, err := probe.LoadGate(path, cohortRecords, cases)
+	if err != nil {
+		return gate, probe.Gate{}, err
+	}
+	for _, id := range cases {
+		switch g.Cases[id] {
+		case probe.GateVoid:
+			gate.Voided[id] = true
+		case probe.GateUnresolved:
+			gate.Unresolved[id] = true
+		}
+	}
+	return gate, g, nil
 }
 
 func buildArms(labels []string, dryRun bool) ([]batch.Arm, error) {

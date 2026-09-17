@@ -171,3 +171,51 @@ func TestLoadInputAndVerdictsValidate(t *testing.T) {
 		t.Error("a missing verdict must be absent, not fabricated")
 	}
 }
+
+func TestLoadGate(t *testing.T) {
+	dir := t.TempDir()
+	w := func(body string) string {
+		p := filepath.Join(dir, "gate.json")
+		_ = os.WriteFile(p, []byte(body), 0o644)
+		return p
+	}
+	cases := []string{"c1", "c2", "c3"}
+	const sha = "b2279b9c"
+
+	good := w(`{"schema_version":"contamination-probe-gate/v1","records_sha256":"b2279b9c",
+		"cases":{"c1":"clean","c2":"void","c3":"unresolved"},"voided":["c2"]}`)
+	g, err := LoadGate(good, sha, cases)
+	if err != nil {
+		t.Fatalf("good gate refused: %v", err)
+	}
+	if g.Cases["c2"] != GateVoid || g.RecordsSHA256 != sha {
+		t.Errorf("gate not parsed: %+v", g)
+	}
+
+	// A gate for another cohort must stop the whole run, not one case.
+	if _, err := LoadGate(good, "deadbeef", cases); err == nil {
+		t.Error("expected refusal on records_sha256 mismatch")
+	}
+	// The check cannot be skipped by passing nothing to check against.
+	if _, err := LoadGate(good, "", cases); err == nil {
+		t.Error("expected refusal when the cohort records_sha256 is absent")
+	}
+	// Absence is not "clean": only positives are probed, so a gate covering
+	// only those would otherwise silently run a different experiment.
+	partial := w(`{"schema_version":"contamination-probe-gate/v1","records_sha256":"b2279b9c",
+		"cases":{"c1":"clean"}}`)
+	_, err = LoadGate(partial, sha, cases)
+	if err == nil {
+		t.Error("expected refusal when the gate omits cases in the run")
+	} else if !strings.Contains(err.Error(), "c2") || !strings.Contains(err.Error(), "c3") {
+		t.Errorf("error should name the missing cases, got: %v", err)
+	}
+	for _, bad := range []string{
+		`{"schema_version":"contamination-probe-gate/v2","records_sha256":"b2279b9c","cases":{"c1":"clean","c2":"clean","c3":"clean"}}`,
+		`{"schema_version":"contamination-probe-gate/v1","records_sha256":"b2279b9c","cases":{"c1":"clean","c2":"clean","c3":"maybe"}}`,
+	} {
+		if _, err := LoadGate(w(bad), sha, cases); err == nil {
+			t.Errorf("expected refusal for %s", bad)
+		}
+	}
+}
