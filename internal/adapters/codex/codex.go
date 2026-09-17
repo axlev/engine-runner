@@ -92,6 +92,10 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 	// claude there is no envelope to unwrap afterward.
 	outputFile := string(req.Stage) + ".json"
 	containerOutputPath := "/workspace/output/" + outputFile
+	// Before the container, never after: see adapters.PrepareWorkspace.
+	if err := adapters.PrepareWorkspace(req.WorkspacePath); err != nil {
+		return adapters.RunResult{}, fmt.Errorf("codex: %w", err)
+	}
 	hostOutputPath := filepath.Join(req.WorkspacePath, "output", outputFile)
 
 	args := buildCodexArgs(req, string(promptBytes), containerOutputPath)

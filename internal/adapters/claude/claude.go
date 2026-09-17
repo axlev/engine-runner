@@ -152,6 +152,12 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 	}
 	containerName := fmt.Sprintf("%s-%s-attempt-%s", req.RunID, req.Stage, attempt)
 
+	// Before the container, never after: docker would otherwise create
+	// these mount sources as root and the paid result could not be written.
+	if err := adapters.PrepareWorkspace(req.WorkspacePath); err != nil {
+		return adapters.RunResult{}, fmt.Errorf("claude: %w", err)
+	}
+
 	args := buildClaudeArgs(req, a.Credentials, string(promptBytes))
 	spec := runner.ContainerSpec{
 		ContainerName: containerName,
