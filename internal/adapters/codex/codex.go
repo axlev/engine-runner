@@ -168,13 +168,18 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 		// Kind only - Credentials.Value is never recorded anywhere.
 		AuthMode:      string(a.Credentials.Kind),
 		AuthRefreshed: authRefreshed,
-		// Usage is deliberately left zero: extracting token counts/cost
-		// would require parsing --json's JSONL event stream, and this
-		// session could not verify that schema without either an
-		// undocumented guess or a real, billable authenticated call
-		// (this host already has codex credentials configured) that
-		// wasn't requested. Left as a known, documented gap rather than
-		// a fabricated field mapping.
+		// Usage comes from the event stream's final turn.completed, whose
+		// shape was read off a real containerised run (see parseUsage).
+		// CostUSD stays zero: under a ChatGPT subscription the vendor
+		// reports no billable figure, and inventing one would put a
+		// number in a field readers treat as metered.
+		Usage: func() adapters.Usage {
+			u := parseUsage(result.Stdout)
+			if !u.Found {
+				return adapters.Usage{}
+			}
+			return adapters.Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens}
+		}(),
 	}
 
 	if runErr != nil {
