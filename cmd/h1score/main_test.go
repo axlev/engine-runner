@@ -248,3 +248,84 @@ func TestLoadReasonMatchStillFailsWhenNotVoidedAndNotEligible(t *testing.T) {
 		t.Fatal("a non-RISKY judged pair was excused by an unrelated arm's void")
 	}
 }
+
+func writeVerify(t *testing.T, dir, runID, caseID, arm, findingID, disposition string, errText string) {
+	t.Helper()
+	body := map[string]any{
+		"schema_version": "h1-verify/v1",
+		"unit":           map[string]any{"case_id": caseID, "arm": arm, "run_id": runID, "finding_id": findingID},
+		"disposition":    disposition,
+	}
+	if errText != "" {
+		body["error"] = errText
+	}
+	b, _ := json.Marshal(body)
+	if err := os.WriteFile(filepath.Join(dir, runID+"."+findingID+".h1-verify.json"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A case is RISKY if ANY qualifying finding stands, so withdrawing the
+// verdict needs EVERY qualifying finding rejected. One surviving
+// confirmation keeps it RISKY - that is the whole reason H1.1 verifies
+// every finding rather than only the highest-ranked one.
+func TestVerificationWithdrawsRiskyOnlyWhenNothingIsConfirmed(t *testing.T) {
+	dir := t.TempDir()
+	writeVerify(t, dir, "t-case-a", "case-a", "T", "f1", "REJECTED", "")
+	writeVerify(t, dir, "t-case-a", "case-a", "T", "f2", "REJECTED", "")
+	writeVerify(t, dir, "t-case-b", "case-b", "T", "f1", "REJECTED", "")
+	writeVerify(t, dir, "t-case-b", "case-b", "T", "f2", "CONFIRMED", "")
+	writeVerify(t, dir, "g-case-c", "case-c", "G", "f1", "INCONCLUSIVE", "")
+
+	got, sum, err := loadVerification(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if survived := got["T"]["case-a"]; survived {
+		t.Error("every finding rejected, but RISKY survived")
+	}
+	if survived := got["T"]["case-b"]; !survived {
+		t.Error("one finding confirmed, so RISKY must survive")
+	}
+	if survived := got["G"]["case-c"]; survived {
+		t.Error("INCONCLUSIVE is not a confirmation")
+	}
+	if sum.Verifications != 5 {
+		t.Errorf("verifications = %d, want 5", sum.Verifications)
+	}
+	if sum.RiskyWithdrawn != 2 {
+		t.Errorf("withdrawn = %d, want 2 (case-a and case-c)", sum.RiskyWithdrawn)
+	}
+	if sum.ByDisposition["CONFIRMED"] != 1 || sum.ByDisposition["REJECTED"] != 3 {
+		t.Errorf("dispositions not counted: %v", sum.ByDisposition)
+	}
+}
+
+// A pair with an errored verification is not covered: withdrawing a verdict
+// on the strength of whichever findings happened to run would report a
+// partial pass as a full one.
+func TestVerificationLeavesErroredPairsUncovered(t *testing.T) {
+	dir := t.TempDir()
+	writeVerify(t, dir, "t-case-a", "case-a", "T", "f1", "REJECTED", "")
+	writeVerify(t, dir, "t-case-a", "case-a", "T", "f2", "", "container exited 1")
+	got, sum, err := loadVerification(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, covered := got["T"]["case-a"]; covered {
+		t.Error("a pair with a failed verification was treated as fully verified")
+	}
+	if sum.CasesCovered != 0 {
+		t.Errorf("covered = %d, want 0", sum.CasesCovered)
+	}
+}
+
+func TestVerificationAbsentWithoutDir(t *testing.T) {
+	got, sum, err := loadVerification("")
+	if err != nil || got != nil || sum.Verifications != 0 {
+		t.Fatalf("no -verify must yield nothing: %v %v %v", got, sum, err)
+	}
+	if _, _, err := loadVerification(t.TempDir()); err == nil {
+		t.Error("an empty -verify directory was accepted")
+	}
+}

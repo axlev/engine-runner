@@ -35,6 +35,12 @@ const (
 	ArmT = "T"
 	ArmG = "G"
 	ArmH = "H"
+	// The primed arms are the same runs after H1.1's skeptic pass: a
+	// RISKY verdict survives only where the verifier confirmed at least
+	// one qualifying finding. They are reported BESIDE T and G, never
+	// instead of them, so the cost of the filter is visible.
+	ArmTPrime = "T'"
+	ArmGPrime = "G'"
 
 	// exactLimit is the number of discordant pairs up to which the paired
 	// permutation is enumerated exhaustively (2^n outcomes). Above it a
@@ -914,6 +920,12 @@ type Options struct {
 	ReasonMatch any
 	// ReasonMatchVoided are judged pairs excluded for being voided.
 	ReasonMatchVoided []VoidedJudged
+
+	// VerifiedRisky[arm][caseID] is false where H1.1's verifier left no
+	// qualifying finding confirmed, so the RISKY verdict does not
+	// survive. Absent arm or case means the pass did not cover it and the
+	// original verdict stands.
+	VerifiedRisky map[string]map[string]bool
 }
 
 // Score computes the report. It fails closed on a run whose case has no
@@ -1047,6 +1059,19 @@ func Score(o Options) (Report, error) {
 	}
 	r.Arms[ArmH] = h
 
+	// H1.1: the same arms after the skeptic pass. RISKY' = RISKY AND at
+	// least one qualifying finding CONFIRMED - "at least one" because a
+	// case is RISKY if ANY qualifying finding stands, so one surviving
+	// confirmation keeps it RISKY. INCONCLUSIVE is not a confirmation.
+	if len(o.VerifiedRisky) > 0 {
+		for _, pair := range []struct{ base, primed string }{{ArmT, ArmTPrime}, {ArmG, ArmGPrime}} {
+			primed := applyVerification(o.Verdicts[pair.base], o.VerifiedRisky[pair.base])
+			r.Arms[pair.primed] = armReport(pair.primed, o.ArmIDs[pair.base]+"+verify",
+				labels, primed, o.Voided[pair.base], o.FixingPaths, true)
+			r.Pairwise = append(r.Pairwise,
+				pairwise(pair.primed+"-"+pair.base, labels, primed, o.Verdicts[pair.base], o.Threshold))
+		}
+	}
 	r.Pairwise = append(r.Pairwise, pairwise("T-G", labels, o.Verdicts[ArmT], o.Verdicts[ArmG], o.Threshold))
 	r.Pairwise = append(r.Pairwise, pairwise("T-H", labels, o.Verdicts[ArmT], o.History, o.Threshold))
 
@@ -1101,4 +1126,21 @@ type VoidedJudged struct {
 	CaseID string `json:"case_id"`
 	Arm    string `json:"arm"`
 	Reason string `json:"reason"`
+}
+
+// applyVerification returns the arm's verdicts with RISKY withdrawn wherever
+// the verifier confirmed nothing. It copies rather than mutating: the
+// unfiltered arm is reported beside the filtered one, and sharing the map
+// would silently rewrite both.
+func applyVerification(verdicts map[string]CaseVerdict, confirmed map[string]bool) map[string]CaseVerdict {
+	out := make(map[string]CaseVerdict, len(verdicts))
+	for id, v := range verdicts {
+		if v.Risky {
+			if survived, covered := confirmed[id]; covered && !survived {
+				v.Risky = false
+			}
+		}
+		out[id] = v
+	}
+	return out
 }

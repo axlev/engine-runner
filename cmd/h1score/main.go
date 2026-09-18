@@ -35,6 +35,7 @@ func main() {
 	scans := flag.String("scans", "", "contamscan output directory; voided runs are excluded")
 	probes := flag.String("probes", "", "cmd/probe output directory (A11); a probe hit voids the case for EVERY arm")
 	probeVerdicts := flag.String("probe-verdicts", "", "directory of <case_id>.json contamination-probe-verdict/v1 files written by the evaluator after reading the probe responses")
+	verifyDir := flag.String("verify", "", "cmd/h1verify output directory (H1.1). A RISKY verdict survives only where the verifier confirmed at least one qualifying finding; T' and G' are reported beside T and G")
 	judgeDir := flag.String("judge", "", "cmd/h1judge output directory of <case_id>.h1-judge.json files. Without it the section 2 reason-match criterion renders absent, and H1 is not evaluated")
 	armT := flag.String("arm-t", "h1-t-v1", "protocol_version of arm T")
 	armG := flag.String("arm-g", "h1-g-v1", "protocol_version of arm G")
@@ -58,6 +59,8 @@ func main() {
 	fp, err := h1score.LoadFixingPaths(*fixing, l.Cases)
 	check(err)
 	probeVoided, probeUnresolved := loadProbes(*probes, *probeVerdicts, l.Cases)
+	verified, verifySummary, err := loadVerification(*verifyDir)
+	check(err)
 	reasonMatch, reasonVoided, err := loadReasonMatch(*judgeDir, l.Cases, verdicts, voidCases, probeVoided)
 	check(err)
 
@@ -71,18 +74,25 @@ func main() {
 		"probes_dir":             *probes,
 		"probe_verdicts_dir":     *probeVerdicts,
 		"judge_dir":              *judgeDir,
+		"verify_dir":             *verifyDir,
 	}
 	report, err := h1score.Score(h1score.Options{
 		Labels: l, Inputs: inputs, ArmIDs: armIDs, Verdicts: verdicts, Voided: voidCases,
 		History: hist, HistoryAbsentReasons: histReasons, FixingPaths: fp, Threshold: *threshold,
 		ProbeVoided: probeVoided, ProbeUnresolved: probeUnresolved,
 		ReasonMatch: reasonMatch, ReasonMatchVoided: reasonVoided,
+		VerifiedRisky: verified,
 	})
 	check(err)
 	check(os.MkdirAll(*out, 0o755))
 	b, _ := json.MarshalIndent(report, "", "  ")
 	check(os.WriteFile(filepath.Join(*out, "h1-score.json"), append(b, '\n'), 0o644))
-	for _, arm := range []string{"T", "G", "H"} {
+	if verifySummary.Verifications > 0 {
+		fmt.Printf("verify: %d verification(s) over %d (case,arm) pair(s); %v; unparseable %d; RISKY withdrawn on %d pair(s)\n",
+			verifySummary.Verifications, verifySummary.CasesCovered, verifySummary.ByDisposition,
+			verifySummary.Unparseable, verifySummary.RiskyWithdrawn)
+	}
+	for _, arm := range append([]string{"T", "G", "H"}, armsOf()...) {
 		a := report.Arms[arm]
 		fmt.Printf("%s: cases %d voided %d  TP %d FP %d FN %d TN %d  precision %s  recall %s\n",
 			arm, a.Cases, a.Voided, a.Counts.TP, a.Counts.FP, a.Counts.FN, a.Counts.TN, show(a.Precision), show(a.Recall))
