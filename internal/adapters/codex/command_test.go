@@ -13,7 +13,6 @@ func TestBuildCodexArgsIncludesIsolationFlags(t *testing.T) {
 		{"--skip-git-repo-check"},
 		{"--ephemeral"},
 		{"--sandbox", "read-only"},
-		{"-a", "never"},
 		{"-o", "/workspace/output/reasoner-1.json"},
 	} {
 		if !containsSubsequence(args, want) {
@@ -22,6 +21,22 @@ func TestBuildCodexArgsIncludesIsolationFlags(t *testing.T) {
 	}
 	if args[0] != "exec" {
 		t.Errorf("args[0] = %q, want \"exec\"", args[0])
+	}
+}
+
+// `-a` does not exist in codex-cli 0.153.2: passing it fails at argument
+// parsing with "unexpected argument '-a' found", before any model call.
+// This test previously REQUIRED it, so the adapter was green against a CLI
+// it could not invoke - the flag list was never checked against the real
+// binary. exec already defaults to approval: never (verified by reading a
+// real containerised run's header), so the correct assertion is its
+// absence.
+func TestBuildCodexArgsPassesNoApprovalFlag(t *testing.T) {
+	args := buildCodexArgs(adapters.RunRequest{}, "/out.json")
+	for _, a := range args {
+		if a == "-a" || a == "--ask-for-approval" {
+			t.Fatalf("approval flag %q passed; codex 0.153.2 rejects it at parse time: %v", a, args)
+		}
 	}
 }
 

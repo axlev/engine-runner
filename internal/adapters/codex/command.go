@@ -26,10 +26,14 @@ func buildCodexArgs(req adapters.RunRequest, outputPath string) []string {
 		// message is done by the codex process itself, not a
 		// model-invoked, sandboxed tool call, so it is unaffected by this.
 		"--sandbox", "read-only",
-		// Non-interactive: there is no human present to approve
-		// anything, and a policy other than "never" could hang forever
-		// waiting for an approval that will never come.
-		"-a", "never",
+		// No approval flag: `-a` does not exist in codex-cli 0.153.2 and
+		// the invocation fails at argument parsing with "unexpected
+		// argument '-a' found". `codex exec` already defaults to
+		// approval: never - verified by reading the run header of a real
+		// containerised call, which printed "approval: never" with no
+		// such flag passed. Non-interactive is what we need and what we
+		// get; asserting it with a flag that does not parse got us
+		// neither.
 		// Diagnostic event stream. Field-level parsing of this JSONL
 		// stream (e.g. for token usage/cost) is deliberately not
 		// implemented - see codex.go - so this is kept only for a human
