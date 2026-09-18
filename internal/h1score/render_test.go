@@ -248,3 +248,34 @@ func TestCriterionOneAbsentWhenTreatmentWasNeverJudged(t *testing.T) {
 		t.Error("a summary with no treatment arm must render absent, not a rate")
 	}
 }
+
+// The note is the one place a reader learns whether the judge shares a
+// model family with the treatment arm. Hardcoding "both Opus" made it
+// state something false the moment the judge was not Opus.
+func TestReasonMatchNoteStatesActualProvenance(t *testing.T) {
+	inFamily := reasonMatchNote(h1judge.Summary{
+		JudgeModel: "claude-opus-5", InFamily: true,
+		Arms: map[string]h1judge.ArmSummary{"T": {Judged: 1}},
+	})
+	if !strings.Contains(inFamily, "claude-opus-5") || !strings.Contains(inFamily, "IN-FAMILY") {
+		t.Errorf("in-family note must name the model and say so: %q", inFamily)
+	}
+
+	out := reasonMatchNote(h1judge.Summary{
+		JudgeModel: "gpt-5", InFamily: false,
+		Arms: map[string]h1judge.ArmSummary{"T": {Judged: 1}},
+	})
+	if !strings.Contains(out, "gpt-5") || !strings.Contains(out, "NOT in-family") {
+		t.Errorf("out-of-family note must name the model and say NOT in-family: %q", out)
+	}
+	if strings.Contains(out, "Opus") {
+		t.Errorf("note still claims Opus for a non-Opus judge: %q", out)
+	}
+
+	// No summary at all: say the provenance is unrecorded rather than
+	// asserting either answer.
+	none := reasonMatchNote(nil)
+	if strings.Contains(none, "IN-FAMILY") || strings.Contains(none, "NOT in-family") {
+		t.Errorf("absent provenance must not assert an answer: %q", none)
+	}
+}

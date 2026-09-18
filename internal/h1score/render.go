@@ -329,7 +329,9 @@ const reasonMatchThreshold = 0.60
 // off disk. A type assertion would silently miss the second case, which is
 // the one the results document is actually produced from.
 type reasonMatchSummary struct {
-	Arms map[string]struct {
+	JudgeModel string `json:"judge_model"`
+	InFamily   bool   `json:"in_family"`
+	Arms       map[string]struct {
 		Judged       int      `json:"judged"`
 		Mechanism    int      `json:"mechanism"`
 		LocalityOnly int      `json:"locality_only"`

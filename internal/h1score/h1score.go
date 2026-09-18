@@ -999,7 +999,11 @@ func Score(o Options) (Report, error) {
 	if o.ReasonMatch != nil {
 		r.ReasonMatch = o.ReasonMatch
 		r.ReasonMatchAbsent = ""
-		r.ReasonMatchNote = "Judge is in-family with the treatment arm (both Opus); section 6 requires that stated on every figure derived from it."
+		// Section 6 requires in-family stated on every figure derived from
+		// the judge. Read it from the summary rather than asserting it: a
+		// hardcoded claim is false the first time the judge is not Opus,
+		// and it would be false in the one place a reader trusts it.
+		r.ReasonMatchNote = reasonMatchNote(o.ReasonMatch)
 	}
 
 	r.ProbeVoidedCases = sortedCopy(o.ProbeVoided)
@@ -1068,4 +1072,16 @@ func sortedCopy(in []string) []string {
 	out := append([]string{}, in...)
 	sort.Strings(out)
 	return out
+}
+
+// reasonMatchNote states the judge's provenance from the summary itself.
+func reasonMatchNote(v any) string {
+	sum, ok := parseReasonMatch(v)
+	if !ok || sum.JudgeModel == "" {
+		return "Judge provenance is not recorded in this summary; section 6 requires the judge model and whether it is in-family to be stated wherever these figures are used."
+	}
+	if sum.InFamily {
+		return fmt.Sprintf("Judge model %s is IN-FAMILY with the treatment arm; section 6 requires that stated on every figure derived from it.", sum.JudgeModel)
+	}
+	return fmt.Sprintf("Judge model %s is NOT in-family with the treatment arm; section 6 requires that stated on every figure derived from it.", sum.JudgeModel)
 }

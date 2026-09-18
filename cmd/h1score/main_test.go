@@ -30,10 +30,13 @@ func writeJudge(t *testing.T, dir, caseID, model string, inFamily bool, verdicts
 	}
 }
 
+// cases builds labelled POSITIVES by default: section 6 judges RISKY true
+// positives, so that is the eligible shape. Negatives are built explicitly
+// where a test needs one.
 func cases(ids ...string) []h1score.Label {
 	out := make([]h1score.Label, 0, len(ids))
 	for _, id := range ids {
-		out = append(out, h1score.Label{CaseID: id})
+		out = append(out, h1score.Label{CaseID: id, Label: "positive"})
 	}
 	return out
 }
@@ -52,8 +55,8 @@ func TestLoadReasonMatchSummarisesJudgedPrimaries(t *testing.T) {
 		"G": {Arm: "G", FindingID: "f-g-1", Agreement: "LOCALITY_ONLY"},
 	})
 	verdicts := map[string]map[string]h1score.CaseVerdict{
-		"T": {"c1": {CaseID: "c1", PrimaryFindingID: "f-t-1"}},
-		"G": {"c1": {CaseID: "c1", PrimaryFindingID: "f-g-1"}},
+		"T": {"c1": {CaseID: "c1", Risky: true, PrimaryFindingID: "f-t-1"}},
+		"G": {"c1": {CaseID: "c1", Risky: true, PrimaryFindingID: "f-g-1"}},
 	}
 	got, err := loadReasonMatch(dir, cases("c1"), verdicts)
 	if err != nil {
@@ -112,7 +115,7 @@ func TestLoadReasonMatchFailsClosedOnDisagreeingJudges(t *testing.T) {
 	writeJudge(t, dir, "c1", "claude-opus-5", true, v)
 	writeJudge(t, dir, "c2", "claude-sonnet-5", false, v)
 	verdicts := map[string]map[string]h1score.CaseVerdict{
-		"T": {"c1": {PrimaryFindingID: "f"}, "c2": {PrimaryFindingID: "f"}},
+		"T": {"c1": {Risky: true, PrimaryFindingID: "f"}, "c2": {Risky: true, PrimaryFindingID: "f"}},
 	}
 	_, err := loadReasonMatch(dir, cases("c1", "c2"), verdicts)
 	if err == nil {
@@ -123,5 +126,43 @@ func TestLoadReasonMatchFailsClosedOnDisagreeingJudges(t *testing.T) {
 func TestLoadReasonMatchRefusesAnEmptyJudgeDir(t *testing.T) {
 	if _, err := loadReasonMatch(t.TempDir(), cases("c1"), nil); err == nil {
 		t.Fatal("an empty -judge directory was accepted; the criterion would render as if judged")
+	}
+}
+
+// Section 6 judges RISKY true positives only. A verdict on anything else
+// means the judge ran against verdicts other than the ones being scored,
+// and the rate would describe a different denominator than §2 names.
+func TestLoadReasonMatchFailsClosedOnNonRiskyCase(t *testing.T) {
+	dir := t.TempDir()
+	writeJudge(t, dir, "c1", "claude-opus-5", true, map[string]h1judge.ArmVerdict{
+		"T": {Arm: "T", FindingID: "f-t-1", Agreement: "MECHANISM"},
+	})
+	verdicts := map[string]map[string]h1score.CaseVerdict{
+		"T": {"c1": {CaseID: "c1", Risky: false, PrimaryFindingID: "f-t-1"}},
+	}
+	_, err := loadReasonMatch(dir, cases("c1"), verdicts)
+	if err == nil {
+		t.Fatal("a judged case the arm did not call RISKY was accepted")
+	}
+	if !strings.Contains(err.Error(), "c1") || !strings.Contains(err.Error(), "RISKY") {
+		t.Errorf("error should name the case and the rule, got: %v", err)
+	}
+}
+
+func TestLoadReasonMatchFailsClosedOnLabelledNegative(t *testing.T) {
+	dir := t.TempDir()
+	writeJudge(t, dir, "c1", "claude-opus-5", true, map[string]h1judge.ArmVerdict{
+		"T": {Arm: "T", FindingID: "f-t-1", Agreement: "MECHANISM"},
+	})
+	verdicts := map[string]map[string]h1score.CaseVerdict{
+		"T": {"c1": {CaseID: "c1", Risky: true, PrimaryFindingID: "f-t-1"}},
+	}
+	negative := []h1score.Label{{CaseID: "c1", Label: "negative"}}
+	_, err := loadReasonMatch(dir, negative, verdicts)
+	if err == nil {
+		t.Fatal("a RISKY call on a labelled negative was accepted into reason match; it is a false positive, already counted in precision")
+	}
+	if !strings.Contains(err.Error(), "c1") {
+		t.Errorf("error should name the case, got: %v", err)
 	}
 }

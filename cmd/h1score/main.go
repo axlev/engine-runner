@@ -122,8 +122,10 @@ func loadReasonMatch(dir string, cases []h1score.Label, verdicts map[string]map[
 		return nil, nil
 	}
 	ids := make([]string, 0, len(cases))
+	positive := make(map[string]bool, len(cases))
 	for _, c := range cases {
 		ids = append(ids, c.CaseID)
+		positive[c.CaseID] = c.Label == "positive"
 	}
 	reports, err := h1judge.LoadReports(dir, ids)
 	if err != nil {
@@ -147,6 +149,17 @@ func loadReasonMatch(dir string, cases []h1score.Label, verdicts map[string]map[
 			if cv.PrimaryFindingID != v.FindingID {
 				return nil, fmt.Errorf("h1score: judge read finding %q for arm %s on %s but the scored primary is %q; the verdict describes a finding this report does not count",
 					v.FindingID, arm, r.CaseID, cv.PrimaryFindingID)
+			}
+			// Section 6 judges "each RISKY true positive". A verdict on
+			// anything else is not a reason-match datum: a RISKY call on a
+			// negative is a false positive already counted in precision,
+			// and a case the arm did not call RISKY has no finding to
+			// match. Either means the judge ran against other verdicts.
+			if !cv.Risky {
+				return nil, fmt.Errorf("h1score: judge report for %s judges arm %s, but that arm did not call the case RISKY; section 6 judges RISKY true positives only", r.CaseID, arm)
+			}
+			if !positive[r.CaseID] {
+				return nil, fmt.Errorf("h1score: judge report for %s judges arm %s, but the case is not a labelled positive; section 6 judges RISKY true positives only", r.CaseID, arm)
 			}
 		}
 	}
