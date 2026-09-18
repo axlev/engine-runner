@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/axlev/engine-runner/internal/adapters"
 )
@@ -50,4 +51,33 @@ func (r *Runner) FreshWorkspace(runID string, stage adapters.Stage, attempt int)
 		return "", fmt.Errorf("runner: creating fresh workspace under %s: %w", runDir, err)
 	}
 	return ws, nil
+}
+
+// Reclaim removes every workspace this run created.
+//
+// Per-attempt workspaces are scratch, but nothing was reclaiming them: an
+// H1 cohort left 175 directories and 29 GB behind, each holding a copy of
+// an ~86 MB repository snapshot, and every later batch started with less
+// headroom than the last.
+//
+// It is deliberately NOT automatic on failure. A failed run's workspace is
+// the only place the inputs as the container saw them still exist, and that
+// is exactly when someone needs to look - the planted-CLAUDE.md steering
+// control was confirmed by finding the file in a sealed run's workspace.
+// Callers reclaim after a run they are satisfied with, and keep the rest.
+func (r *Runner) Reclaim(runID string) error {
+	if runID == "" {
+		return fmt.Errorf("runner: refusing to reclaim an empty run id")
+	}
+	dir := filepath.Join(r.root, runID)
+	// Containment check: the run id comes from a caller and a traversal
+	// would delete outside the root. Cheap to check, expensive to miss.
+	rel, err := filepath.Rel(r.root, dir)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("runner: run id %q does not resolve inside the workspace root", runID)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("runner: reclaiming %s: %w", dir, err)
+	}
+	return nil
 }
