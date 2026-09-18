@@ -175,6 +175,60 @@ The general point stands and is not fixed: a green dry run says nothing about
 vendor acceptance. Anything that shapes the real invocation - flags, schema
 projection, argument construction - is exercised only by a real call.
 
+### 7. A vendor CLI can succeed while doing nothing
+
+`codex exec` exits zero when its tools cannot run. Three separate
+dependencies were missing in turn, and each produced a complete, sealed,
+plausible result:
+
+- `codex-code-mode-host` absent: every tool call fails with "failed to
+  spawn code-mode host". One startup warning, then exit 0.
+- `bubblewrap` absent: the tool sandbox cannot start. Exit 0.
+- `bwrap` present but unable to create a user namespace inside the
+  container: same. Exit 0.
+
+In all three the model answered from the prompt alone and returned an
+articulate INCONCLUSIVE verdict explaining that it could not read the
+repository - which is what an honest verifier SHOULD say, and is exactly
+what made it dangerous. Across a full pass it would have read as "the
+skeptic cannot settle these questions": a fact about the image, published
+as a fact about the vendor.
+
+Nothing in the sealed record distinguishes that from a real answer. Exit
+code is 0, the schema validates, usage is reported, the reasoning is
+coherent. The only tell is `evidence: []` where citations were required,
+and no check enforced that.
+
+**What follows.** An adapter for a vendor CLI cannot be trusted on the
+strength of it running. The flag list in particular is a claim about
+another program that only that program can check: `-a never` was carried
+in the codex adapter and its test REQUIRED it, while codex 0.153.2 rejects
+it at argument parsing - so the adapter was green against a CLI it could
+not invoke at all. A first real call is the cheapest test in the suite and
+the only one that exercises this class.
+
+The related gap is that a stage's DECLARED capability is not verified
+against what it actually had. `tool_sets` records the grant; nothing
+records whether a single tool call succeeded. A stage that was granted
+Read, Grep and Glob and made zero successful calls is indistinguishable in
+the sealed run from one that used them.
+
+### 8. Reasoning effort defaults are per-vendor and silent
+
+`h1verify` did not set `ReasoningLevel`, so the verifier ran at codex's
+own default. That default is NONE, while the arms it judged ran
+`claude-opus-5` at `high`. The run header states it plainly - "reasoning
+effort: none" - but nothing in the sealed result did, and the first six
+verifications came back CONFIRMED, which is what a model that is not
+reasoning does with a plausible claim.
+
+A null result on that configuration would not have meant "a
+different-vendor skeptic cannot reject false positives". It would have
+meant "a non-reasoning skeptic cannot" - the configuration as the finding,
+wearing the hypothesis's clothes. Effort and model are now recorded in
+every h1-verify report; an unset effort must never mean "whatever this
+vendor happens to default to".
+
 ## The ceiling: the served model can move
 
 `claude-opus-5` is a name resolved server-side, and the review container runs
