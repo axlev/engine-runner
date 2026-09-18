@@ -267,6 +267,24 @@ func enumerate(runsRoot string, voided map[string]bool, only []string) ([]Unit, 
 			})
 		}
 	}
+	// Order by CASE, then arm: T and G for the same case are verified
+	// together rather than all of one arm and then the other. The sealed
+	// runs glob as g-case-* before t-case-*, which put every G first - so
+	// a pass interrupted part way (and under a subscription quota, that is
+	// the normal case) yielded 13 G verifications and no T at all, and
+	// T'-T had nothing to say. Pairing them makes a partial pass a
+	// usable partial answer: the arms are compared on the same cases,
+	// which also controls for case difficulty rather than hoping the two
+	// samples happen to match.
+	sort.Slice(units, func(i, j int) bool {
+		if units[i].CaseID != units[j].CaseID {
+			return units[i].CaseID < units[j].CaseID
+		}
+		if units[i].Arm != units[j].Arm {
+			return units[i].Arm < units[j].Arm
+		}
+		return units[i].Rank < units[j].Rank
+	})
 	return units, skippedVoid, nil
 }
 
