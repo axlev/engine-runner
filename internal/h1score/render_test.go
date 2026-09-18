@@ -1,6 +1,8 @@
 package h1score
 
 import (
+	"encoding/json"
+	"github.com/axlev/engine-runner/internal/h1judge"
 	"strings"
 	"testing"
 )
@@ -169,5 +171,80 @@ func TestProvenanceNotesAreRendered(t *testing.T) {
 	})
 	if !strings.Contains(out, note) {
 		t.Errorf("provenance note missing from the rendered document")
+	}
+}
+
+func f64(v float64) *float64 { return &v }
+
+// Criterion 1 must read the judge summary rather than announcing itself
+// absent. The round-trip case is the one that matters: -render reads a
+// sealed h1-score.json, so ReasonMatch arrives as a generic map and a type
+// assertion would silently miss it.
+func TestCriterionOneReadsReasonMatchInBothForms(t *testing.T) {
+	summary := h1judge.Summary{
+		SchemaVersion: "h1-judge/v1",
+		JudgeModel:    "claude-opus-5",
+		InFamily:      true,
+		Arms: map[string]h1judge.ArmSummary{
+			"T": {Judged: 10, Mechanism: 7, LocalityOnly: 2, None: 1,
+				ReasonMatch: f64(0.70), LocalityRate: f64(0.20)},
+			"G": {Judged: 8, Mechanism: 3, LocalityOnly: 4, None: 1,
+				ReasonMatch: f64(0.375), LocalityRate: f64(0.50)},
+		},
+	}
+	// As Score sets it, and as -render reads it back off disk.
+	var roundTripped any
+	b, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &roundTripped); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, value := range map[string]any{"typed": summary, "round-tripped": roundTripped} {
+		out := Render(Report{SchemaVersion: SchemaVersion, ReasonMatch: value}, nil, RenderMeta{})
+		if strings.Contains(out, "absent (judge pass has not run)") {
+			t.Errorf("%s: criterion 1 still reports the judge pass as not run", name)
+		}
+		if !strings.Contains(out, "0.700 (7/10)") {
+			t.Errorf("%s: criterion 1 does not carry the treatment rate", name)
+		}
+		if !strings.Contains(out, "**meets**") {
+			t.Errorf("%s: 0.70 is over the 0.60 threshold and must meet the criterion", name)
+		}
+		// LOCALITY_ONLY must be reported beside the match rate.
+		if !strings.Contains(out, "0.200") || !strings.Contains(out, "0.500") {
+			t.Errorf("%s: LOCALITY_ONLY rates missing from the reason-match section", name)
+		}
+		// Both arms are reported, not just the treatment.
+		if !strings.Contains(out, "0.375") {
+			t.Errorf("%s: arm G reason match missing", name)
+		}
+	}
+}
+
+func TestCriterionOneFailsBelowThreshold(t *testing.T) {
+	below := h1judge.Summary{Arms: map[string]h1judge.ArmSummary{
+		"T": {Judged: 100, Mechanism: 59, ReasonMatch: f64(0.59)},
+	}}
+	out := Render(Report{SchemaVersion: SchemaVersion, ReasonMatch: below}, nil, RenderMeta{})
+	if !strings.Contains(out, "0.590 (59/100)") {
+		t.Error("observed rate missing")
+	}
+	if !strings.Contains(out, "does not meet") {
+		t.Error("0.59 is under the 0.60 threshold and must not meet the criterion")
+	}
+}
+
+// A judge pass that judged nothing for the treatment arm must say so, not
+// render as a zero rate that reads like a measured result.
+func TestCriterionOneAbsentWhenTreatmentWasNeverJudged(t *testing.T) {
+	none := h1judge.Summary{Arms: map[string]h1judge.ArmSummary{
+		"G": {Judged: 3, Mechanism: 1, ReasonMatch: f64(0.333)},
+	}}
+	out := Render(Report{SchemaVersion: SchemaVersion, ReasonMatch: none}, nil, RenderMeta{})
+	if !strings.Contains(out, "absent (no judged treatment findings)") {
+		t.Error("a summary with no treatment arm must render absent, not a rate")
 	}
 }

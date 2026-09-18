@@ -1,6 +1,7 @@
 package h1score
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -102,8 +103,16 @@ func renderCriteria(w func(string, ...any), r Report, meta RenderMeta) {
 	w("|---|---|---|---|")
 
 	// Reason match: only the judge pass can fill this.
-	w("| Reason match, treatment RISKY true positives | ≥ 60%% MECHANISM | %s | %s |",
-		"absent (judge pass has not run)", "cannot be evaluated")
+	rmObs, rmVerdict := "absent (judge pass has not run)", "cannot be evaluated"
+	if sum, ok := parseReasonMatch(r.ReasonMatch); ok {
+		if a, have := sum.Arms[ArmT]; have && a.ReasonMatch != nil {
+			rmObs = fmt.Sprintf("%.3f (%d/%d)", *a.ReasonMatch, a.Mechanism, a.Judged)
+			rmVerdict = passFail(*a.ReasonMatch >= reasonMatchThreshold)
+		} else {
+			rmObs = "absent (no judged treatment findings)"
+		}
+	}
+	w("| Reason match, treatment RISKY true positives | ≥ 60%% MECHANISM | %s | %s |", rmObs, rmVerdict)
 
 	hit := "absent"
 	verdict := "cannot be evaluated"
@@ -283,8 +292,74 @@ func renderReasonMatch(w func(string, ...any), r Report) {
 		w("")
 		return
 	}
-	w("%v", r.ReasonMatch)
+	sum, ok := parseReasonMatch(r.ReasonMatch)
+	if !ok {
+		w("**Present but unreadable.** The report carries a reason-match value that is not a")
+		w("judge summary, so no rate is shown rather than a guessed one.")
+		w("")
+		return
+	}
+	if r.ReasonMatchNote != "" {
+		w("%s", r.ReasonMatchNote)
+		w("")
+	}
+	w("| Arm | Judged | MECHANISM | LOCALITY_ONLY | NONE | TOO_VAGUE | Reason match | LOCALITY_ONLY rate |")
+	w("|---|---|---|---|---|---|---|---|")
+	for _, arm := range sortedKeys(sum.Arms) {
+		a := sum.Arms[arm]
+		w("| %s | %d | %d | %d | %d | %d | %s | %s |", arm, a.Judged, a.Mechanism,
+			a.LocalityOnly, a.None, a.TooVague, pct(a.ReasonMatch), pct(a.LocalityRate))
+	}
 	w("")
+	w("LOCALITY_ONLY is reported beside the match rate deliberately: a high MECHANISM")
+	w("count with near-zero LOCALITY_ONLY is evidence the judge is agreeing too easily,")
+	w("not that reviewers are right.")
+	w("")
+}
+
+// reasonMatchThreshold is the §2 criterion: at least 60%% of the treatment
+// arm's judged RISKY true positives must be MECHANISM.
+const reasonMatchThreshold = 0.60
+
+// reasonMatchSummary is the part of h1judge.Summary this document reads.
+//
+// It is parsed from JSON rather than type-asserted because the value
+// arrives two ways: as the judge summary itself when Score is called
+// directly, and as a generic map when -render reads a sealed h1-score.json
+// off disk. A type assertion would silently miss the second case, which is
+// the one the results document is actually produced from.
+type reasonMatchSummary struct {
+	Arms map[string]struct {
+		Judged       int      `json:"judged"`
+		Mechanism    int      `json:"mechanism"`
+		LocalityOnly int      `json:"locality_only"`
+		None         int      `json:"none"`
+		TooVague     int      `json:"too_vague"`
+		ReasonMatch  *float64 `json:"reason_match_rate"`
+		LocalityRate *float64 `json:"locality_only_rate"`
+	} `json:"arms"`
+}
+
+func parseReasonMatch(v any) (reasonMatchSummary, bool) {
+	var s reasonMatchSummary
+	if v == nil {
+		return s, false
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return s, false
+	}
+	if err := json.Unmarshal(b, &s); err != nil || len(s.Arms) == 0 {
+		return s, false
+	}
+	return s, true
+}
+
+func pct(v *float64) string {
+	if v == nil {
+		return "absent"
+	}
+	return fmt.Sprintf("%.3f", *v)
 }
 
 func renderRecallByClass(w func(string, ...any), r Report) {

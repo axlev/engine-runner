@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/axlev/engine-runner/internal/h1judge"
 	"github.com/axlev/engine-runner/internal/h1score"
 	"github.com/axlev/engine-runner/internal/probe"
 )
@@ -34,6 +35,7 @@ func main() {
 	scans := flag.String("scans", "", "contamscan output directory; voided runs are excluded")
 	probes := flag.String("probes", "", "cmd/probe output directory (A11); a probe hit voids the case for EVERY arm")
 	probeVerdicts := flag.String("probe-verdicts", "", "directory of <case_id>.json contamination-probe-verdict/v1 files written by the evaluator after reading the probe responses")
+	judgeDir := flag.String("judge", "", "cmd/h1judge output directory of <case_id>.h1-judge.json files. Without it the section 2 reason-match criterion renders absent, and H1 is not evaluated")
 	armT := flag.String("arm-t", "h1-t-v1", "protocol_version of arm T")
 	armG := flag.String("arm-g", "h1-g-v1", "protocol_version of arm G")
 	threshold := flag.Float64("threshold", 15, "pre-registered points over each baseline")
@@ -56,6 +58,8 @@ func main() {
 	fp, err := h1score.LoadFixingPaths(*fixing, l.Cases)
 	check(err)
 	probeVoided, probeUnresolved := loadProbes(*probes, *probeVerdicts, l.Cases)
+	reasonMatch, err := loadReasonMatch(*judgeDir, l.Cases, verdicts)
+	check(err)
 
 	inputs := map[string]string{
 		"labels_sha256":          labelsSum,
@@ -66,11 +70,13 @@ func main() {
 		"scans_dir":              *scans,
 		"probes_dir":             *probes,
 		"probe_verdicts_dir":     *probeVerdicts,
+		"judge_dir":              *judgeDir,
 	}
 	report, err := h1score.Score(h1score.Options{
 		Labels: l, Inputs: inputs, ArmIDs: armIDs, Verdicts: verdicts, Voided: voidCases,
 		History: hist, HistoryAbsentReasons: histReasons, FixingPaths: fp, Threshold: *threshold,
 		ProbeVoided: probeVoided, ProbeUnresolved: probeUnresolved,
+		ReasonMatch: reasonMatch,
 	})
 	check(err)
 	check(os.MkdirAll(*out, 0o755))
@@ -91,6 +97,60 @@ func main() {
 		fmt.Printf("%s: common %d discordant %d  dPrecision %s (p1 %s)  dRecall %s (p1 %s)\n",
 			p.Comparison, p.CommonCases, p.Discordant, showF(p.DeltaPrecision), showF(p.PPrecision.OneSided), showF(p.DeltaRecall), showF(p.PRecall.OneSided))
 	}
+}
+
+// loadReasonMatch turns the judge's per-case reports into the section 6
+// figure. It computes nothing itself: h1judge.Summarise already owns that
+// arithmetic and cmd/h1judge prints the same numbers from it, so a second
+// implementation here could drift from the one whose output is published.
+//
+// It fails closed on two disagreements, because both mean the figure would
+// describe something other than what was scored:
+//
+//   - a judged finding that is not the scored primary. The judge is supposed
+//     to read the primary carried in verdict.json precisely so it cannot
+//     pick a different finding than the scorer did; if they differ, the
+//     verdict answers a question about a finding this report does not count.
+//   - reports disagreeing on judge model or in-family. Section 6 requires
+//     in-family stated on every figure derived from it, and one figure
+//     cannot carry two answers.
+//
+// Absent -judge it returns nil, which leaves the criterion rendering absent
+// rather than inventing a zero.
+func loadReasonMatch(dir string, cases []h1score.Label, verdicts map[string]map[string]h1score.CaseVerdict) (any, error) {
+	if dir == "" {
+		return nil, nil
+	}
+	ids := make([]string, 0, len(cases))
+	for _, c := range cases {
+		ids = append(ids, c.CaseID)
+	}
+	reports, err := h1judge.LoadReports(dir, ids)
+	if err != nil {
+		return nil, err
+	}
+	if len(reports) == 0 {
+		return nil, fmt.Errorf("h1score: -judge %s holds no h1-judge/v1 report for any labelled case", dir)
+	}
+
+	model, inFamily := reports[0].JudgeModel, reports[0].InFamily
+	for _, r := range reports {
+		if r.JudgeModel != model || r.InFamily != inFamily {
+			return nil, fmt.Errorf("h1score: judge reports disagree: %s is %q (in-family %v) but %s is %q (in-family %v)",
+				reports[0].CaseID, model, inFamily, r.CaseID, r.JudgeModel, r.InFamily)
+		}
+		for arm, v := range r.Verdicts {
+			cv, ok := verdicts[arm][r.CaseID]
+			if !ok {
+				return nil, fmt.Errorf("h1score: judge report for %s judges arm %s, which has no scored verdict for that case", r.CaseID, arm)
+			}
+			if cv.PrimaryFindingID != v.FindingID {
+				return nil, fmt.Errorf("h1score: judge read finding %q for arm %s on %s but the scored primary is %q; the verdict describes a finding this report does not count",
+					v.FindingID, arm, r.CaseID, cv.PrimaryFindingID)
+			}
+		}
+	}
+	return h1judge.Summarise(reports, model, inFamily), nil
 }
 
 func show(r h1score.Rate) string {
