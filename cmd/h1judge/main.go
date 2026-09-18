@@ -44,6 +44,8 @@ func main() {
 	armG := flag.String("arm-g", "h1-g-v1", "protocol_version of arm G")
 	maxCost := flag.Float64("max-cost", 3.0, "per-call cost ceiling (estimate under a subscription token)")
 	dryRun := flag.Bool("dry-run", false, "build and seal the pools and prompts without calling the model")
+	only := flag.String("only", "", "comma-separated case ids to judge (default: every eligible case)")
+	resume := flag.Bool("resume", true, "skip a case whose sealed report already carries fix mechanisms. A report with none was never really judged - that is the shape the parse defect produced - so those are re-judged rather than trusted")
 	flag.Parse()
 	for name, v := range map[string]string{"-labels": *labelsPath, "-cohort-manifest": *manifest, "-fixes": *fixes, "-out": *out} {
 		if v == "" {
@@ -103,7 +105,23 @@ func main() {
 
 	var reports []h1judge.Report
 	var totalCost float64
+	wanted := map[string]bool{}
+	for _, id := range splitCSV(*only) {
+		wanted[id] = true
+	}
+	var skipped, failed int
 	for _, caseID := range sortedKeys(byCase) {
+		if len(wanted) > 0 && !wanted[caseID] {
+			continue
+		}
+		// Resume deliberately keys on "has mechanisms", not "file exists".
+		// The parse defect sealed reports that look complete and carry an
+		// empty fix list; keying on existence would skip exactly the cases
+		// that need re-judging.
+		if *resume && !*dryRun && sealedWithMechanisms(*out, caseID) {
+			skipped++
+			continue
+		}
 		pool := h1judge.PoolFor(caseID, byCase[caseID])
 		if err := pool.CheckOpaque(); err != nil {
 			check(fmt.Errorf("case %s: %w", caseID, err))
@@ -136,6 +154,7 @@ func main() {
 			cost, err := runJudge(context.Background(), adapter, &r, pool, string(patch), *model, *maxCost)
 			totalCost += cost
 			if err != nil {
+				failed++
 				fmt.Fprintf(os.Stderr, "h1judge: %s: %v\n", caseID, err)
 			}
 		}
@@ -143,6 +162,9 @@ func main() {
 		check(writeJSON(filepath.Join(*out, caseID+".h1-judge.json"), r))
 	}
 
+	if skipped > 0 {
+		fmt.Printf("h1judge: %d case(s) skipped, already judged with mechanisms\n", skipped)
+	}
 	summary := h1judge.Summarise(reports, *model, strings.Contains(*model, "opus"))
 	check(writeJSON(filepath.Join(*out, "h1-judge-summary.json"), summary))
 	fmt.Println()
@@ -159,6 +181,43 @@ func main() {
 		fmt.Printf("cost estimate $%.2f (CLI estimate under a subscription token, not a bill)\n", totalCost)
 	}
 	fmt.Printf("judge model %s, in-family: %v - state this on every figure derived from it\n", *model, summary.InFamily)
+	// A judge pass with failed cases must not look like a clean one. The
+	// defect this guard was added for produced verdicts that read as
+	// evidence while nothing had errored; a non-zero exit is the cheapest
+	// way for an operator or supervisor to notice.
+	if failed > 0 {
+		fmt.Fprintf(os.Stderr, "h1judge: %d case(s) FAILED and were not judged; re-run to pick them up (resume skips only cases with mechanisms)\n", failed)
+		os.Exit(1)
+	}
+}
+
+// parseMechanisms reads call 1's response.
+//
+// The response and the sealed report are different documents.
+// judge-mechanisms.schema.json defines {"fix_mechanisms":[{"fix_id",
+// "mechanism"}]}; h1judge.Mechanism is the REPORT's shape, {"fix_id",
+// "description"}. Unmarshalling the response straight into the report type
+// matched neither key, so the list was always empty, call 2 was handed no
+// fixes, and the judge returned NONE for everything with both calls
+// reporting success - 11 cases and ~23 paid calls sealed as evidence.
+//
+// Do not align the tags to "simplify" this: that changes the sealed
+// h1-judge/v1 report, and the schema is hashed into the sealed prompts.
+func parseMechanisms(raw []byte) ([]h1judge.Mechanism, error) {
+	var doc struct {
+		FixMechanisms []struct {
+			FixID     string `json:"fix_id"`
+			Mechanism string `json:"mechanism"`
+		} `json:"fix_mechanisms"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return nil, fmt.Errorf("parsing mechanisms: %w", err)
+	}
+	out := make([]h1judge.Mechanism, 0, len(doc.FixMechanisms))
+	for _, m := range doc.FixMechanisms {
+		out = append(out, h1judge.Mechanism{FixID: m.FixID, Description: m.Mechanism})
+	}
+	return out, nil
 }
 
 // runJudge makes the two calls. Kept small and separate so the shape is
@@ -172,13 +231,31 @@ func runJudge(ctx context.Context, a *claude.Adapter, r *h1judge.Report, pool ju
 	if err != nil {
 		return spent, fmt.Errorf("mechanisms call: %w", err)
 	}
-	var mechDoc struct {
-		Mechanisms []h1judge.Mechanism `json:"mechanisms"`
+	// The call-1 RESPONSE and the sealed report are different documents and
+	// must be parsed as such. judge-mechanisms.schema.json defines
+	// {"fix_mechanisms":[{"fix_id","mechanism"}]}; h1judge.Mechanism is the
+	// report's shape, {"fix_id","description"}. Unmarshalling the response
+	// straight into the report type matched NEITHER key, so Mechanisms was
+	// always empty, call 2 was handed an empty fix list, and the judge
+	// correctly returned NONE for every finding - with both calls
+	// reporting success. 11 cases and ~23 paid calls were sealed that way.
+	// Do not "simplify" this by aligning the tags: that would silently
+	// change the sealed h1-judge/v1 report, and the schema is hashed into
+	// the sealed prompts.
+	mechs, err := parseMechanisms(mechRaw)
+	if err != nil {
+		return spent, err
 	}
-	if err := json.Unmarshal(mechRaw, &mechDoc); err != nil {
-		return spent, fmt.Errorf("parsing mechanisms: %w", err)
+	r.Mechanisms = mechs
+
+	// (2) Fail closed. A fix diff with no mechanisms is not a judgeable
+	// case: call 2 would be asked "does this finding match these fixes?"
+	// with no fixes, and NONE is the only answer it could give. That is
+	// indistinguishable from a reviewer who genuinely missed, so it must
+	// stop here rather than produce a verdict that reads like evidence.
+	if len(r.Mechanisms) == 0 && len(strings.TrimSpace(patch)) > 0 {
+		return spent, fmt.Errorf("call 1 returned no fix mechanisms for a %d-byte fix diff; refusing to judge against an empty fix list", len(patch))
 	}
-	r.Mechanisms = mechDoc.Mechanisms
 
 	verdictRaw, cost, err := ask(ctx, a, r.CaseID, "verdicts", verdictsPrompt(r.Mechanisms, pool), model, maxCost)
 	spent += cost
@@ -320,4 +397,29 @@ func check(err error) {
 		fmt.Fprintln(os.Stderr, "h1judge:", err)
 		os.Exit(1)
 	}
+}
+
+// sealedWithMechanisms reports whether this case already has a report that
+// was actually judged. An unreadable or mechanism-less report counts as not
+// judged, so it is re-run rather than silently kept.
+func sealedWithMechanisms(outDir, caseID string) bool {
+	raw, err := os.ReadFile(filepath.Join(outDir, caseID+".h1-judge.json"))
+	if err != nil {
+		return false
+	}
+	var r h1judge.Report
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return false
+	}
+	return r.SchemaVersion == h1judge.SchemaVersion && len(r.Mechanisms) > 0
+}
+
+func splitCSV(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
