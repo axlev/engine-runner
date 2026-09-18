@@ -40,9 +40,12 @@ import (
 )
 
 const (
-	schemaVersion = "h1-verify/v1"
-	promptPath    = "prompts/h1.1-v1/verifier.md"
-	schemaFile    = "h1-verify.schema.json"
+	// The CLI default as of codex 0.153.2, recorded so a sealed report
+	// names the model rather than an empty string.
+	defaultCodexModel = "gpt-6-astra"
+	schemaVersion     = "h1-verify/v1"
+	promptPath        = "prompts/h1.1-v1/verifier.md"
+	schemaFile        = "h1-verify.schema.json"
 )
 
 // Unit is one (case, arm, finding) to verify.
@@ -59,20 +62,21 @@ type Unit struct {
 
 // Report is h1-verify-report/v1: one sealed verification.
 type Report struct {
-	SchemaVersion string `json:"schema_version"`
-	Unit          Unit   `json:"unit"`
-	Model         string `json:"model"`
-	AuthMode      string `json:"auth_mode"`
-	Disposition   string `json:"disposition"`
-	Reason        string `json:"reason"`
-	Mechanism     string `json:"mechanism_restated,omitempty"`
-	Evidence      []any  `json:"evidence,omitempty"`
-	Unparseable   bool   `json:"unparseable_first_response,omitempty"`
-	RawResponse   string `json:"raw_response,omitempty"`
-	InputTokens   int    `json:"input_tokens,omitempty"`
-	OutputTokens  int    `json:"output_tokens,omitempty"`
-	DurationMS    int64  `json:"duration_ms,omitempty"`
-	Error         string `json:"error,omitempty"`
+	SchemaVersion   string `json:"schema_version"`
+	Unit            Unit   `json:"unit"`
+	Model           string `json:"model"`
+	ReasoningEffort string `json:"reasoning_effort"`
+	AuthMode        string `json:"auth_mode"`
+	Disposition     string `json:"disposition"`
+	Reason          string `json:"reason"`
+	Mechanism       string `json:"mechanism_restated,omitempty"`
+	Evidence        []any  `json:"evidence,omitempty"`
+	Unparseable     bool   `json:"unparseable_first_response,omitempty"`
+	RawResponse     string `json:"raw_response,omitempty"`
+	InputTokens     int    `json:"input_tokens,omitempty"`
+	OutputTokens    int    `json:"output_tokens,omitempty"`
+	DurationMS      int64  `json:"duration_ms,omitempty"`
+	Error           string `json:"error,omitempty"`
 }
 
 func main() {
@@ -81,7 +85,8 @@ func main() {
 	scans := flag.String("scans", "", "contamscan output directory; voided runs are not verified. A voided run is dropped from every figure, so verifying one spends a call on a finding nothing can count")
 	out := flag.String("out", "", "evaluator-only output directory (required)")
 	image := flag.String("adapter-image", "engine-runner/adapter-codex:0.153.2", "container image for the verifier CLI")
-	model := flag.String("model", "", "verifier model; empty uses the image default")
+	model := flag.String("model", "", "verifier model; empty uses the CLI default (gpt-6-astra as of codex 0.153.2)")
+	effort := flag.String("reasoning-effort", "high", "verifier reasoning effort. Defaults to high to match the arms being judged (h1-opus-wide.yaml: reasoning_level high). Codex's own default is NONE, and a skeptic that is not reasoning agrees with plausible claims - which would make a null result a fact about the configuration, not about cross-vendor verification")
 	only := flag.String("only", "", "comma-separated case ids (default: every eligible case)")
 	maxCost := flag.Float64("max-cost", 3.0, "per-call cost ceiling (no-op under a subscription, which reports no billable figure)")
 	maxSeconds := flag.Int("max-seconds", 900, "per-call wall clock ceiling")
@@ -138,7 +143,7 @@ func main() {
 		// keep hammering the limit for every remaining unit.
 		var rep Report
 		for attempt := 1; ; attempt++ {
-			rep = verifyOne(context.Background(), adapter, r, validator, u, *cohort, *model, *maxCost, *maxSeconds, *dryRun, *keepWorkspace)
+			rep = verifyOne(context.Background(), adapter, r, validator, u, *cohort, *model, *effort, *maxCost, *maxSeconds, *dryRun, *keepWorkspace)
 			matched, stalled := isStall(rep.Error)
 			if !stalled || attempt > *maxStalls {
 				if stalled {
@@ -254,9 +259,16 @@ func enumerate(runsRoot string, voided map[string]bool, only []string) ([]Unit, 
 }
 
 func verifyOne(ctx context.Context, a *codex.Adapter, r *runner.Runner, v *orchestrator.SchemaValidator,
-	u Unit, cohort, model string, maxCost float64, maxSeconds int, dryRun, keepWorkspace bool) Report {
+	u Unit, cohort, model, effort string, maxCost float64, maxSeconds int, dryRun, keepWorkspace bool) Report {
 
-	rep := Report{SchemaVersion: schemaVersion, Unit: u, Model: model}
+	// Record what actually ran, not what was requested: an empty -model
+	// means the CLI default, and a sealed report that says "" leaves a
+	// reader guessing which model produced the verdict.
+	recorded := model
+	if recorded == "" {
+		recorded = defaultCodexModel
+	}
+	rep := Report{SchemaVersion: schemaVersion, Unit: u, Model: recorded, ReasoningEffort: effort}
 	workRunID := "verify-" + u.RunID + "-" + u.FindingID
 	ws, err := r.FreshWorkspace(workRunID, adapters.StageReasoner3, 1)
 	if err != nil {
@@ -294,7 +306,7 @@ func verifyOne(ctx context.Context, a *codex.Adapter, r *runner.Runner, v *orche
 	res, err := a.Run(cctx, adapters.RunRequest{
 		RunID: workRunID, CaseID: u.CaseID, Stage: adapters.StageReasoner3,
 		WorkspacePath: sc.WorkspacePath, PromptPath: sc.PromptPath,
-		OutputSchema: schemaFile, Model: model,
+		OutputSchema: schemaFile, Model: model, ReasoningLevel: effort,
 		Tools:  []string{"Read", "Grep", "Glob"},
 		Budget: adapters.Budget{MaxCostUSD: maxCost, MaxWallClockSeconds: maxSeconds, MaxOutputTokens: 16000},
 	})
