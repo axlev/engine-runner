@@ -44,6 +44,7 @@ func main() {
 	armG := flag.String("arm-g", "h1-g-v1", "protocol_version of arm G")
 	maxCost := flag.Float64("max-cost", 3.0, "per-call cost ceiling (estimate under a subscription token)")
 	dryRun := flag.Bool("dry-run", false, "build and seal the pools and prompts without calling the model")
+	scans := flag.String("scans", "", "contamscan output directory. A voided run is dropped from every figure, so pooling it spends a paid call on a finding no figure can count; without this the scorer skips them after the fact")
 	only := flag.String("only", "", "comma-separated case ids to judge (default: every eligible case)")
 	resume := flag.Bool("resume", true, "skip a case whose sealed report already carries fix mechanisms. A report with none was never really judged - that is the shape the parse defect produced - so those are re-judged rather than trusted")
 	flag.Parse()
@@ -73,8 +74,22 @@ func main() {
 	sort.Strings(caseIDs)
 
 	armIDs := map[string]string{h1score.ArmT: *armT, h1score.ArmG: *armG}
-	verdicts, _, err := h1score.LoadVerdicts(*runs, armIDs, nil)
+	// Voided runs are excluded here rather than judged and discarded
+	// later: a voided run is dropped from every figure, so judging one
+	// spends a paid call on a finding nothing can count. Without -scans
+	// this pools them and h1score skips them after the fact, which is
+	// correct but not free.
+	scanVoided, err := h1score.LoadVoided(*scans)
 	check(err)
+	verdicts, voidedByArm, err := h1score.LoadVerdicts(*runs, armIDs, scanVoided)
+	check(err)
+	var voidedRuns int
+	for _, ids := range voidedByArm {
+		voidedRuns += len(ids)
+	}
+	if voidedRuns > 0 {
+		fmt.Printf("h1judge: %d scan-voided run(s) excluded from pooling\n", voidedRuns)
+	}
 
 	candidates := h1judge.EligibleCandidates(caseIDs, []string{h1score.ArmT, h1score.ArmG},
 		func(arm, caseID string) (h1judge.Candidate, bool, bool) {

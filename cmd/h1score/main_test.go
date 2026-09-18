@@ -42,7 +42,7 @@ func cases(ids ...string) []h1score.Label {
 }
 
 func TestLoadReasonMatchAbsentWithoutJudgeDir(t *testing.T) {
-	got, err := loadReasonMatch("", cases("c1"), nil)
+	got, _, err := loadReasonMatch("", cases("c1"), nil, nil, nil)
 	if err != nil || got != nil {
 		t.Fatalf("no -judge must yield (nil, nil), got (%v, %v)", got, err)
 	}
@@ -58,7 +58,7 @@ func TestLoadReasonMatchSummarisesJudgedPrimaries(t *testing.T) {
 		"T": {"c1": {CaseID: "c1", Risky: true, PrimaryFindingID: "f-t-1"}},
 		"G": {"c1": {CaseID: "c1", Risky: true, PrimaryFindingID: "f-g-1"}},
 	}
-	got, err := loadReasonMatch(dir, cases("c1"), verdicts)
+	got, _, err := loadReasonMatch(dir, cases("c1"), verdicts, nil, nil)
 	if err != nil {
 		t.Fatalf("well-formed judge output refused: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestLoadReasonMatchFailsClosedOnFindingMismatch(t *testing.T) {
 	verdicts := map[string]map[string]h1score.CaseVerdict{
 		"T": {"c1": {CaseID: "c1", PrimaryFindingID: "f-t-1"}},
 	}
-	_, err := loadReasonMatch(dir, cases("c1"), verdicts)
+	_, _, err := loadReasonMatch(dir, cases("c1"), verdicts, nil, nil)
 	if err == nil {
 		t.Fatal("a judged finding that is not the scored primary was accepted")
 	}
@@ -101,7 +101,7 @@ func TestLoadReasonMatchFailsClosedOnUnscoredArm(t *testing.T) {
 	writeJudge(t, dir, "c1", "claude-opus-5", true, map[string]h1judge.ArmVerdict{
 		"T": {Arm: "T", FindingID: "f-t-1", Agreement: "MECHANISM"},
 	})
-	_, err := loadReasonMatch(dir, cases("c1"), map[string]map[string]h1score.CaseVerdict{})
+	_, _, err := loadReasonMatch(dir, cases("c1"), map[string]map[string]h1score.CaseVerdict{}, nil, nil)
 	if err == nil {
 		t.Fatal("a judged arm with no scored verdict was accepted")
 	}
@@ -117,14 +117,14 @@ func TestLoadReasonMatchFailsClosedOnDisagreeingJudges(t *testing.T) {
 	verdicts := map[string]map[string]h1score.CaseVerdict{
 		"T": {"c1": {Risky: true, PrimaryFindingID: "f"}, "c2": {Risky: true, PrimaryFindingID: "f"}},
 	}
-	_, err := loadReasonMatch(dir, cases("c1", "c2"), verdicts)
+	_, _, err := loadReasonMatch(dir, cases("c1", "c2"), verdicts, nil, nil)
 	if err == nil {
 		t.Fatal("reports from two different judges were accepted into one figure")
 	}
 }
 
 func TestLoadReasonMatchRefusesAnEmptyJudgeDir(t *testing.T) {
-	if _, err := loadReasonMatch(t.TempDir(), cases("c1"), nil); err == nil {
+	if _, _, err := loadReasonMatch(t.TempDir(), cases("c1"), nil, nil, nil); err == nil {
 		t.Fatal("an empty -judge directory was accepted; the criterion would render as if judged")
 	}
 }
@@ -140,7 +140,7 @@ func TestLoadReasonMatchFailsClosedOnNonRiskyCase(t *testing.T) {
 	verdicts := map[string]map[string]h1score.CaseVerdict{
 		"T": {"c1": {CaseID: "c1", Risky: false, PrimaryFindingID: "f-t-1"}},
 	}
-	_, err := loadReasonMatch(dir, cases("c1"), verdicts)
+	_, _, err := loadReasonMatch(dir, cases("c1"), verdicts, nil, nil)
 	if err == nil {
 		t.Fatal("a judged case the arm did not call RISKY was accepted")
 	}
@@ -158,11 +158,93 @@ func TestLoadReasonMatchFailsClosedOnLabelledNegative(t *testing.T) {
 		"T": {"c1": {CaseID: "c1", Risky: true, PrimaryFindingID: "f-t-1"}},
 	}
 	negative := []h1score.Label{{CaseID: "c1", Label: "negative"}}
-	_, err := loadReasonMatch(dir, negative, verdicts)
+	_, _, err := loadReasonMatch(dir, negative, verdicts, nil, nil)
 	if err == nil {
 		t.Fatal("a RISKY call on a labelled negative was accepted into reason match; it is a false positive, already counted in precision")
 	}
 	if !strings.Contains(err.Error(), "c1") {
 		t.Errorf("error should name the case, got: %v", err)
+	}
+}
+
+// A voided run is dropped from every figure, so a judged pair on one cannot
+// count here. h1judge pools by RISKY and label alone and has no scan input,
+// so it legitimately judges runs the section 8 scan later voided; the
+// scorer must skip those rather than fail on them.
+func TestLoadReasonMatchSkipsScanVoidedPairs(t *testing.T) {
+	dir := t.TempDir()
+	writeJudge(t, dir, "c1", "claude-opus-5", true, map[string]h1judge.ArmVerdict{
+		"T": {Arm: "T", FindingID: "f-t-1", Agreement: "MECHANISM"},
+		"G": {Arm: "G", FindingID: "f-g-1", Agreement: "MECHANISM"},
+	})
+	verdicts := map[string]map[string]h1score.CaseVerdict{
+		"T": {"c1": {CaseID: "c1", Risky: true, PrimaryFindingID: "f-t-1"}},
+		// G's run was voided, so it is absent from the scored verdicts.
+		"G": {},
+	}
+	scanVoided := map[string][]string{"G": {"c1"}}
+
+	got, voided, err := loadReasonMatch(dir, cases("c1"), verdicts, scanVoided, nil)
+	if err != nil {
+		t.Fatalf("a scan-voided judged pair must be skipped, not fail: %v", err)
+	}
+	if len(voided) != 1 || voided[0].Arm != "G" || voided[0].CaseID != "c1" {
+		t.Fatalf("the voided pair must be reported: %+v", voided)
+	}
+	if !strings.Contains(voided[0].Reason, "scan-voided") {
+		t.Errorf("reason should name the rule, got %q", voided[0].Reason)
+	}
+	s := got.(h1judge.Summary)
+	if s.Arms["T"].Judged != 1 {
+		t.Errorf("the unvoided arm must still be judged: %+v", s.Arms["T"])
+	}
+	if s.Arms["G"].Judged != 0 {
+		t.Errorf("the voided arm must not enter the denominator: %+v", s.Arms["G"])
+	}
+}
+
+// The probe voids a case for EVERY arm, including arms whose runs are
+// otherwise present and RISKY.
+func TestLoadReasonMatchSkipsProbeVoidedCasesForEveryArm(t *testing.T) {
+	dir := t.TempDir()
+	writeJudge(t, dir, "c1", "claude-opus-5", true, map[string]h1judge.ArmVerdict{
+		"T": {Arm: "T", FindingID: "f-t-1", Agreement: "MECHANISM"},
+		"G": {Arm: "G", FindingID: "f-g-1", Agreement: "MECHANISM"},
+	})
+	verdicts := map[string]map[string]h1score.CaseVerdict{
+		"T": {"c1": {CaseID: "c1", Risky: true, PrimaryFindingID: "f-t-1"}},
+		"G": {"c1": {CaseID: "c1", Risky: true, PrimaryFindingID: "f-g-1"}},
+	}
+	got, voided, err := loadReasonMatch(dir, cases("c1"), verdicts, nil, []string{"c1"})
+	if err != nil {
+		t.Fatalf("a probe-voided case must be skipped, not fail: %v", err)
+	}
+	if len(voided) != 2 {
+		t.Fatalf("a probe void drops every arm, got %d: %+v", len(voided), voided)
+	}
+	for _, v := range voided {
+		if !strings.Contains(v.Reason, "probe-voided") {
+			t.Errorf("reason should name the rule, got %q", v.Reason)
+		}
+	}
+	s := got.(h1judge.Summary)
+	if s.Arms["T"].Judged != 0 || s.Arms["G"].Judged != 0 {
+		t.Errorf("no arm may count a probe-voided case: %+v", s.Arms)
+	}
+}
+
+// The void skip must not become a blanket excuse: a judged pair that is
+// neither voided nor RISKY-and-positive is still a hard failure.
+func TestLoadReasonMatchStillFailsWhenNotVoidedAndNotEligible(t *testing.T) {
+	dir := t.TempDir()
+	writeJudge(t, dir, "c1", "claude-opus-5", true, map[string]h1judge.ArmVerdict{
+		"T": {Arm: "T", FindingID: "f-t-1", Agreement: "MECHANISM"},
+	})
+	verdicts := map[string]map[string]h1score.CaseVerdict{
+		"T": {"c1": {CaseID: "c1", Risky: false, PrimaryFindingID: "f-t-1"}},
+	}
+	// Voided for a DIFFERENT arm, so this pair is not excused.
+	if _, _, err := loadReasonMatch(dir, cases("c1"), verdicts, map[string][]string{"G": {"c1"}}, nil); err == nil {
+		t.Fatal("a non-RISKY judged pair was excused by an unrelated arm's void")
 	}
 }

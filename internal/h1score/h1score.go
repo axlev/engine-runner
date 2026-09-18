@@ -342,12 +342,18 @@ type Report struct {
 	Provisional          bool     `json:"provisional"`
 	ProvisionalReason    string   `json:"provisional_reason,omitempty"`
 
-	Arms              map[string]ArmReport `json:"arms"`
-	Pairwise          []Pairwise           `json:"pairwise"`
-	ReasonMatch       any                  `json:"reason_match"`
-	ReasonMatchNote   string               `json:"reason_match_note,omitempty"`
-	ReasonMatchAbsent string               `json:"reason_match_absent"`
-	Underpowered      map[string]bool      `json:"underpowered_at_this_cohort_size"`
+	Arms        map[string]ArmReport `json:"arms"`
+	Pairwise    []Pairwise           `json:"pairwise"`
+	ReasonMatch any                  `json:"reason_match"`
+	// ReasonMatchVoided records judged (case, arm) pairs dropped from the
+	// reason-match figure because the run was voided. A voided run is
+	// dropped from every figure, so it cannot count here either - but it
+	// was paid for and judged, so it is reported rather than silently
+	// absent from the denominator.
+	ReasonMatchVoided []VoidedJudged  `json:"reason_match_voided,omitempty"`
+	ReasonMatchNote   string          `json:"reason_match_note,omitempty"`
+	ReasonMatchAbsent string          `json:"reason_match_absent"`
+	Underpowered      map[string]bool `json:"underpowered_at_this_cohort_size"`
 }
 
 // ---- loading ----
@@ -906,6 +912,8 @@ type Options struct {
 	ProbeUnresolved []string
 	// ReasonMatch is the h1judge summary, when that pass has run.
 	ReasonMatch any
+	// ReasonMatchVoided are judged pairs excluded for being voided.
+	ReasonMatchVoided []VoidedJudged
 }
 
 // Score computes the report. It fails closed on a run whose case has no
@@ -996,6 +1004,7 @@ func Score(o Options) (Report, error) {
 		ReasonMatchAbsent: "the reason-match judge pass has not run; fed from cmd/h1judge in a later pass",
 		Underpowered:      map[string]bool{},
 	}
+	r.ReasonMatchVoided = o.ReasonMatchVoided
 	if o.ReasonMatch != nil {
 		r.ReasonMatch = o.ReasonMatch
 		r.ReasonMatchAbsent = ""
@@ -1084,4 +1093,12 @@ func reasonMatchNote(v any) string {
 		return fmt.Sprintf("Judge model %s is IN-FAMILY with the treatment arm; section 6 requires that stated on every figure derived from it.", sum.JudgeModel)
 	}
 	return fmt.Sprintf("Judge model %s is NOT in-family with the treatment arm; section 6 requires that stated on every figure derived from it.", sum.JudgeModel)
+}
+
+// VoidedJudged is one judged (case, arm) pair that a void removed from the
+// reason-match figure.
+type VoidedJudged struct {
+	CaseID string `json:"case_id"`
+	Arm    string `json:"arm"`
+	Reason string `json:"reason"`
 }

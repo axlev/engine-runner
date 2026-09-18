@@ -48,6 +48,7 @@ func Render(r Report, labels []Label, meta RenderMeta) string {
 	renderPairwise(w, r)
 	renderHitRate(w, r)
 	renderReasonMatch(w, r)
+	renderReasonMatchVoided(w, r)
 	renderRecallByClass(w, r)
 	renderStrata(w, r, labels)
 	renderVoided(w, r)
@@ -314,6 +315,24 @@ func renderReasonMatch(w func(string, ...any), r Report) {
 	w("LOCALITY_ONLY is reported beside the match rate deliberately: a high MECHANISM")
 	w("count with near-zero LOCALITY_ONLY is evidence the judge is agreeing too easily,")
 	w("not that reviewers are right.")
+	w("")
+}
+
+func renderReasonMatchVoided(w func(string, ...any), r Report) {
+	if len(r.ReasonMatchVoided) == 0 {
+		return
+	}
+	w("### Judged but voided")
+	w("")
+	w("A voided run is dropped from every figure, so these judged findings are")
+	w("excluded from the rates above. They were paid for and judged, so they are")
+	w("reported rather than left as a silently smaller denominator.")
+	w("")
+	w("| Case | Arm | Reason |")
+	w("|---|---|---|")
+	for _, v := range r.ReasonMatchVoided {
+		w("| `%s` | %s | %s |", v.CaseID, v.Arm, v.Reason)
+	}
 	w("")
 }
 

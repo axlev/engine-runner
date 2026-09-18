@@ -58,7 +58,7 @@ func main() {
 	fp, err := h1score.LoadFixingPaths(*fixing, l.Cases)
 	check(err)
 	probeVoided, probeUnresolved := loadProbes(*probes, *probeVerdicts, l.Cases)
-	reasonMatch, err := loadReasonMatch(*judgeDir, l.Cases, verdicts)
+	reasonMatch, reasonVoided, err := loadReasonMatch(*judgeDir, l.Cases, verdicts, voidCases, probeVoided)
 	check(err)
 
 	inputs := map[string]string{
@@ -76,7 +76,7 @@ func main() {
 		Labels: l, Inputs: inputs, ArmIDs: armIDs, Verdicts: verdicts, Voided: voidCases,
 		History: hist, HistoryAbsentReasons: histReasons, FixingPaths: fp, Threshold: *threshold,
 		ProbeVoided: probeVoided, ProbeUnresolved: probeUnresolved,
-		ReasonMatch: reasonMatch,
+		ReasonMatch: reasonMatch, ReasonMatchVoided: reasonVoided,
 	})
 	check(err)
 	check(os.MkdirAll(*out, 0o755))
@@ -117,9 +117,10 @@ func main() {
 //
 // Absent -judge it returns nil, which leaves the criterion rendering absent
 // rather than inventing a zero.
-func loadReasonMatch(dir string, cases []h1score.Label, verdicts map[string]map[string]h1score.CaseVerdict) (any, error) {
+func loadReasonMatch(dir string, cases []h1score.Label, verdicts map[string]map[string]h1score.CaseVerdict,
+	scanVoided map[string][]string, probeVoided []string) (any, []h1score.VoidedJudged, error) {
 	if dir == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	ids := make([]string, 0, len(cases))
 	positive := make(map[string]bool, len(cases))
@@ -127,27 +128,62 @@ func loadReasonMatch(dir string, cases []h1score.Label, verdicts map[string]map[
 		ids = append(ids, c.CaseID)
 		positive[c.CaseID] = c.Label == "positive"
 	}
-	reports, err := h1judge.LoadReports(dir, ids)
-	if err != nil {
-		return nil, err
+	// A voided run is dropped from EVERY figure, so a judged pair on a
+	// voided run cannot count here either. h1judge pools by RISKY and
+	// label alone and has no scan input, so it legitimately judges runs
+	// the section 8 scan later voided; the registered rule decides it.
+	probeVoid := map[string]bool{}
+	for _, id := range probeVoided {
+		probeVoid[id] = true
 	}
-	if len(reports) == 0 {
-		return nil, fmt.Errorf("h1score: -judge %s holds no h1-judge/v1 report for any labelled case", dir)
+	scanVoid := map[string]bool{}
+	for arm, ids := range scanVoided {
+		for _, id := range ids {
+			scanVoid[arm+"/"+id] = true
+		}
 	}
 
+	reports, err := h1judge.LoadReports(dir, ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(reports) == 0 {
+		return nil, nil, fmt.Errorf("h1score: -judge %s holds no h1-judge/v1 report for any labelled case", dir)
+	}
+	var voided []h1score.VoidedJudged
+
 	model, inFamily := reports[0].JudgeModel, reports[0].InFamily
-	for _, r := range reports {
+	for i := range reports {
+		// Indexed, not ranged by value: the filtered verdict map is
+		// written back into the slice Summarise reads. A copy would drop
+		// the filtering silently and count voided pairs anyway.
+		r := &reports[i]
 		if r.JudgeModel != model || r.InFamily != inFamily {
-			return nil, fmt.Errorf("h1score: judge reports disagree: %s is %q (in-family %v) but %s is %q (in-family %v)",
+			return nil, nil, fmt.Errorf("h1score: judge reports disagree: %s is %q (in-family %v) but %s is %q (in-family %v)",
 				reports[0].CaseID, model, inFamily, r.CaseID, r.JudgeModel, r.InFamily)
 		}
+		kept := map[string]h1judge.ArmVerdict{}
 		for arm, v := range r.Verdicts {
+			// Keyed by case for the probe (it voids every arm) and by
+			// arm+case for the scan (it voids one arm's run). Checked
+			// before the hard failures below, because a voided run is
+			// legitimately absent from the scored verdicts.
+			if probeVoid[r.CaseID] {
+				voided = append(voided, h1score.VoidedJudged{CaseID: r.CaseID, Arm: arm,
+					Reason: "probe-voided (A11): the case is dropped for every arm"})
+				continue
+			}
+			if scanVoid[arm+"/"+r.CaseID] {
+				voided = append(voided, h1score.VoidedJudged{CaseID: r.CaseID, Arm: arm,
+					Reason: "scan-voided (section 8): this arm's run is dropped"})
+				continue
+			}
 			cv, ok := verdicts[arm][r.CaseID]
 			if !ok {
-				return nil, fmt.Errorf("h1score: judge report for %s judges arm %s, which has no scored verdict for that case", r.CaseID, arm)
+				return nil, nil, fmt.Errorf("h1score: judge report for %s judges arm %s, which has no scored verdict for that case", r.CaseID, arm)
 			}
 			if cv.PrimaryFindingID != v.FindingID {
-				return nil, fmt.Errorf("h1score: judge read finding %q for arm %s on %s but the scored primary is %q; the verdict describes a finding this report does not count",
+				return nil, nil, fmt.Errorf("h1score: judge read finding %q for arm %s on %s but the scored primary is %q; the verdict describes a finding this report does not count",
 					v.FindingID, arm, r.CaseID, cv.PrimaryFindingID)
 			}
 			// Section 6 judges "each RISKY true positive". A verdict on
@@ -156,14 +192,16 @@ func loadReasonMatch(dir string, cases []h1score.Label, verdicts map[string]map[
 			// and a case the arm did not call RISKY has no finding to
 			// match. Either means the judge ran against other verdicts.
 			if !cv.Risky {
-				return nil, fmt.Errorf("h1score: judge report for %s judges arm %s, but that arm did not call the case RISKY; section 6 judges RISKY true positives only", r.CaseID, arm)
+				return nil, nil, fmt.Errorf("h1score: judge report for %s judges arm %s, but that arm did not call the case RISKY; section 6 judges RISKY true positives only", r.CaseID, arm)
 			}
 			if !positive[r.CaseID] {
-				return nil, fmt.Errorf("h1score: judge report for %s judges arm %s, but the case is not a labelled positive; section 6 judges RISKY true positives only", r.CaseID, arm)
+				return nil, nil, fmt.Errorf("h1score: judge report for %s judges arm %s, but the case is not a labelled positive; section 6 judges RISKY true positives only", r.CaseID, arm)
 			}
+			kept[arm] = v
 		}
+		r.Verdicts = kept
 	}
-	return h1judge.Summarise(reports, model, inFamily), nil
+	return h1judge.Summarise(reports, model, inFamily), voided, nil
 }
 
 func show(r h1score.Rate) string {
