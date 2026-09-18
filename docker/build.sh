@@ -87,11 +87,29 @@ if ! docker info >/dev/null 2>&1; then
     DOCKER=(sudo docker)
 fi
 
+# codex's tool calls run in a separate helper process; without it every
+# tool call fails while the run still looks successful. It ships in the
+# standalone release package beside the CLI.
+HELPER_ARG="README.md"  # any file in the docker/ context; removed again for claude
+if [ "$VENDOR" = "codex" ]; then
+    HELPER_SRC="$(dirname "$SOURCE")/codex-code-mode-host"
+    if [ ! -x "$HELPER_SRC" ]; then
+        echo "build.sh: codex-code-mode-host not found beside $SOURCE" >&2
+        echo "  Without it the image builds and runs, and every tool call fails" >&2
+        echo "  with \"failed to spawn code-mode host\" while the run reports success." >&2
+        exit 1
+    fi
+    echo "build.sh: copying $HELPER_SRC -> docker/codex-code-mode-host"
+    cp "$HELPER_SRC" docker/codex-code-mode-host
+    HELPER_ARG="codex-code-mode-host"
+fi
+
 echo "build.sh: building $IMAGE"
 "${DOCKER[@]}" build \
     -f docker/Dockerfile \
     --build-arg "VENDOR=${VENDOR}" \
     --build-arg "VENDOR_BINARY=${VENDOR}" \
+    --build-arg "VENDOR_HELPER=${HELPER_ARG}" \
     -t "$IMAGE" \
     docker
 

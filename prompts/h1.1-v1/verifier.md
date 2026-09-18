@@ -55,5 +55,24 @@ the diff, unless the diff is the thing in question.
 
 ## Output
 
-Emit one `h1-verify/v1` document and nothing else. `finding_id` must be
-copied verbatim from the finding below.
+Emit one `h1-verify/v1` document and nothing else — no prose before or
+after it, no code fence. `finding_id` must be copied verbatim from the
+finding below.
+
+The field names are exact. `schema_version`, not `schema`:
+
+```json
+{
+  "schema_version": "h1-verify/v1",
+  "finding_id": "<copied verbatim from below>",
+  "disposition": "CONFIRMED | REJECTED | INCONCLUSIVE",
+  "mechanism_restated": "<the defect as you understand it>",
+  "evidence": [
+    {"path": "<repository path>", "lines": "<line or range>", "quote": "<text as it appears in the file>"}
+  ],
+  "reason": "<why the disposition follows from the evidence>"
+}
+```
+
+No other keys are permitted, and `evidence` entries require all three of
+`path`, `lines` and `quote`.

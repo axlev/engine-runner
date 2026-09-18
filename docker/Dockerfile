@@ -62,6 +62,20 @@ RUN useradd --create-home --uid 10001 --shell /bin/bash reasoner
 COPY ${VENDOR_BINARY} /usr/local/bin/${VENDOR}
 RUN chmod 0755 /usr/local/bin/${VENDOR}
 
+# codex's file-reading tools run in a separate "code mode host" process. If
+# it is absent the CLI does NOT fail: it warns once, and every tool call
+# then fails with "failed to spawn code-mode host", so the model answers
+# from the prompt alone while the run looks successful. That produced four
+# confident INCONCLUSIVE verdicts on a repository the model never read.
+#
+# Copied in for codex and absent for claude, so the claude image's digest
+# does not move. The build script supplies an empty placeholder when the
+# vendor has no such helper, because COPY of a missing path fails the build.
+ARG VENDOR_HELPER=README.md
+COPY ${VENDOR_HELPER} /usr/local/bin/codex-code-mode-host
+RUN if [ "${VENDOR}" = "codex" ]; then chmod 0755 /usr/local/bin/codex-code-mode-host; \
+    else rm -f /usr/local/bin/codex-code-mode-host; fi
+
 # A writable home that is not the workspace, so anything the CLI writes for
 # itself cannot land in the stage's output mount and be mistaken for stage
 # output.
