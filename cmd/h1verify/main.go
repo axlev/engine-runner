@@ -151,7 +151,11 @@ func main() {
 				}
 				break
 			}
-			w := stallWait(rep.Error, time.Now(), *stallFallback)
+			// Back off across consecutive stalls: a quota that is still
+			// exhausted after one wait is usually exhausted for a while,
+			// and re-asking at a fixed interval neither helps nor is free.
+			backoff := *stallFallback << uint(minInt(attempt-1, 3))
+			w := stallWait(rep.Error, time.Now(), backoff)
 			stalls++
 			fmt.Printf("  %s/%s: rate limited (%q); waiting %s then retrying\n",
 				u.RunID, u.FindingID, matched, fmtWait(w))
@@ -451,4 +455,11 @@ func check(err error) {
 		fmt.Fprintln(os.Stderr, "h1verify:", err)
 		os.Exit(1)
 	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

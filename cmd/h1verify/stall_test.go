@@ -38,16 +38,29 @@ func TestStallWaitReadsTheClockReset(t *testing.T) {
 	}
 }
 
-func TestStallWaitHandlesAmPmAndMidnight(t *testing.T) {
-	now := time.Date(2026, 9, 18, 23, 0, 0, 0, time.Local)
-	// 12:15 AM is after 23:00, i.e. tomorrow: 1h15m away, not 22h45m back.
-	if d := stallWait("try again at 12:15 AM", now, time.Hour); d < 74*time.Minute || d > 76*time.Minute {
-		t.Errorf("midnight wrap = %v, want about 1h15m", d)
+// The stated reset carries no timezone and the account's need not match
+// this host's. Observed: "try again at 2:30 PM" was still returned at 14:45
+// local, so the reset was in some other zone. The clock is therefore a HINT,
+// used only when it lands plausibly ahead of now, and the fallback covers
+// everything else.
+func TestStallWaitTreatsThePastAsUnknownRatherThanImminent(t *testing.T) {
+	// A reset already behind the clock says nothing except that the hint
+	// is not in our timezone. Returning the one-minute floor for it
+	// produced a retry every minute against a still-exhausted quota.
+	now := time.Date(2026, 9, 18, 14, 45, 0, 0, time.Local)
+	if d := stallWait("try again at 2:30 PM", now, 20*time.Minute); d != 20*time.Minute {
+		t.Errorf("a passed reset gave %v; it must fall back, not busy-loop", d)
 	}
-	// A reset just behind the clock is minutes away, never a day.
-	now2 := time.Date(2026, 9, 18, 14, 35, 0, 0, time.Local)
-	if d := stallWait("try again at 2:30 PM", now2, time.Hour); d > 2*time.Minute {
-		t.Errorf("a just-passed reset waited %v; a stale clock must not cost a day", d)
+	// Nor may it wrap to tomorrow: a wrong-timezone hint would then cost
+	// most of a day.
+	now2 := time.Date(2026, 9, 18, 23, 0, 0, 0, time.Local)
+	if d := stallWait("try again at 12:15 AM", now2, 20*time.Minute); d != 20*time.Minute {
+		t.Errorf("a wrapped reset gave %v; an untrusted hint must not cost a day", d)
+	}
+	// A plausible future time in this zone is still used.
+	now3 := time.Date(2026, 9, 18, 12, 46, 0, 0, time.Local)
+	if d := stallWait("try again at 2:30 PM", now3, 20*time.Minute); d < 104*time.Minute || d > 105*time.Minute {
+		t.Errorf("a future reset = %v, want about 1h44m", d)
 	}
 }
 

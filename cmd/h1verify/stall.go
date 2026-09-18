@@ -47,11 +47,19 @@ func stallWait(errText string, now time.Time, fallback time.Duration) time.Durat
 	}
 	target := time.Date(now.Year(), now.Month(), now.Day(), h, min, 0, 0, now.Location())
 	d := target.Sub(now)
-	if d < -time.Hour {
-		d += 24 * time.Hour
-	}
-	if d < time.Minute {
-		return time.Minute
+	// The stated time carries NO timezone, and the account's is not
+	// necessarily this host's. Observed: "try again at 2:30 PM" still
+	// returned at 14:45 local, so the reset was in some other zone -
+	// UTC would be 16:30 here, US Pacific 23:30.
+	//
+	// So the clock time is a hint, trusted only when it lands in a
+	// plausible window ahead of now. A time already past tells us nothing
+	// except that the hint is not in our timezone, and returning the
+	// one-minute floor for it produced a retry every minute against a
+	// quota that was still exhausted - a busy loop that burns attempts
+	// and abandons units without verifying any of them.
+	if d < time.Minute || d > 12*time.Hour {
+		return fallback
 	}
 	return d + 30*time.Second // a small cushion past the stated reset
 }
