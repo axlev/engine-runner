@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engine-runner.internal/schemas/h1-verify.schema.json",
+  "title": "h1-verify/v1",
+  "description": "One skeptic's disposition of one finding produced by another model. H1.1 asks whether a different-vendor verifier rejects false RISKY calls without losing real ones, so the disposition is the measurement and the evidence is what makes it checkable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "finding_id", "disposition", "reason"],
+  "properties": {
+    "schema_version": { "const": "h1-verify/v1" },
+    "finding_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The finding under review, copied verbatim from the prompt. It is checked against the finding actually sent, so a verdict cannot be attributed to a different finding."
+    },
+    "disposition": {
+      "type": "string",
+      "enum": ["CONFIRMED", "REJECTED", "INCONCLUSIVE"],
+      "description": "CONFIRMED: the described defect is real and reachable as stated. REJECTED: it is not - the mechanism does not hold, the code does not do what the finding says, or the condition cannot occur. INCONCLUSIVE: the repository does not settle it either way. INCONCLUSIVE is an honest answer and is counted as not confirmed, never as a rejection."
+    },
+    "mechanism_restated": {
+      "type": "string",
+      "maxLength": 4000,
+      "description": "The defect as the verifier understands it, in its own words. A restatement that does not match the finding is itself evidence the verifier judged something else."
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Repository citations the disposition rests on. Required in practice for REJECTED and CONFIRMED: an unevidenced rejection is an opinion, and the whole point is to test whether a skeptic can do better than one.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "lines", "quote"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "lines": { "type": "string", "minLength": 1, "description": "A line or range, e.g. \"417\" or \"417-428\"." },
+          "quote": { "type": "string", "minLength": 1, "maxLength": 2000 }
+        }
+      }
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000,
+      "description": "Why the disposition follows from the evidence. Not a summary of the finding."
+    }
+  }
+}

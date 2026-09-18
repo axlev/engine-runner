@@ -140,6 +140,12 @@ type Verdict struct {
 	FindingsDiscovered int  `json:"findings_discovered"`
 	Survivors          *int `json:"survivors,omitempty"`
 	FindingsAtOrAbove  int  `json:"findings_at_or_above_threshold"`
+
+	// QualifyingFindings are every finding at or above threshold, in rank
+	// order. FindingsAtOrAbove is their count; this is the set itself,
+	// which anything attempting to overturn the verdict needs, since one
+	// surviving qualifier keeps the case RISKY.
+	QualifyingFindings []PrimaryFinding `json:"qualifying_findings,omitempty"`
 }
 
 type h1Finding struct {
@@ -266,6 +272,13 @@ func ScoreCase(runID, caseID, armRule, reviewAPath, reviewBPath string) (Verdict
 			continue
 		}
 		v.FindingsAtOrAbove++
+		// Every finding that makes the case RISKY, not just the first.
+		// A case is RISKY if ANY qualifying finding stands, so anything
+		// asking "could this verdict be overturned" has to see all of
+		// them: rejecting the primary alone leaves the case RISKY
+		// whenever a second qualifier survives, which is the majority of
+		// RISKY cases in practice.
+		v.QualifyingFindings = append(v.QualifyingFindings, c)
 		if v.Verdict == VerdictClean {
 			v.Verdict = VerdictRisky
 			deciding := c
