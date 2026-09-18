@@ -3,7 +3,11 @@
 // docs/system-design.md section 9.
 package codex
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+)
 
 // CredentialKind distinguishes the two ways engine-runner can authenticate
 // a codex invocation, mirroring the claude package's dual API-key/
@@ -13,6 +17,12 @@ type CredentialKind string
 const (
 	CredentialAPIKey      CredentialKind = "api_key"
 	CredentialAccessToken CredentialKind = "access_token"
+	// CredentialChatGPTLogin is an interactive `codex login` already done
+	// on the host: the CLI persists OAuth tokens to $CODEX_HOME/auth.json
+	// and reads them from there, with no environment variable involved.
+	// Verified live: a container given ONLY a read-only bind mount of that
+	// file authenticated and completed a call.
+	CredentialChatGPTLogin CredentialKind = "chatgpt_login"
 )
 
 const (
@@ -38,6 +48,8 @@ type Credentials struct {
 	Value string
 }
 
+// EnvVar is the variable this credential is injected as, or "" for
+// chatgpt_login, which travels as a mounted file rather than an env var.
 func (c Credentials) EnvVar() string {
 	switch c.Kind {
 	case CredentialAPIKey:
@@ -47,6 +59,32 @@ func (c Credentials) EnvVar() string {
 	default:
 		return ""
 	}
+}
+
+// AuthFilePath is the host auth.json backing a chatgpt_login credential,
+// and "" for the env-var kinds. Value is never the token itself for this
+// kind - only where it lives - so nothing that logs Value can leak it.
+func (c Credentials) AuthFilePath() string {
+	if c.Kind == CredentialChatGPTLogin {
+		return c.Value
+	}
+	return ""
+}
+
+// hostAuthFile is where `codex login` persists tokens, honouring CODEX_HOME
+// the way the CLI does.
+func hostAuthFile(lookup func(string) (string, bool)) string {
+	if home, ok := lookup("CODEX_HOME"); ok && home != "" {
+		return filepath.Join(home, "auth.json")
+	}
+	// HOME comes from lookup, not os.UserHomeDir: detection must depend
+	// only on what the caller passes, or the result changes with whichever
+	// machine the tests run on and a test asserting "no credentials"
+	// passes or fails by accident.
+	if home, ok := lookup("HOME"); ok && home != "" {
+		return filepath.Join(home, ".codex", "auth.json")
+	}
+	return ""
 }
 
 // DetectCredentials finds exactly one usable credential via lookup (an
@@ -61,5 +99,13 @@ func DetectCredentials(lookup func(string) (string, bool)) (Credentials, error) 
 	if v, ok := lookup(envAccessToken); ok && v != "" {
 		return Credentials{Kind: CredentialAccessToken, Value: v}, nil
 	}
-	return Credentials{}, fmt.Errorf("codex: no credentials found; set %s or %s", envAPIKey, envAccessToken)
+	// Last, because an explicit environment variable is a deliberate
+	// choice for this run while a host login is ambient state. Value
+	// holds the PATH, never the token.
+	if p := hostAuthFile(lookup); p != "" {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Size() > 0 {
+			return Credentials{Kind: CredentialChatGPTLogin, Value: p}, nil
+		}
+	}
+	return Credentials{}, fmt.Errorf("codex: no credentials found; set %s or %s, or run `codex login`", envAPIKey, envAccessToken)
 }

@@ -98,6 +98,23 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 	}
 	hostOutputPath := filepath.Join(req.WorkspacePath, "output", outputFile)
 
+	// A chatgpt_login credential travels as a mounted file, not an env
+	// var: the CLI reads $CODEX_HOME/auth.json and nothing else.
+	var auth *authMount
+	if a.Credentials.Kind == CredentialChatGPTLogin {
+		m, err := stageAuth(a.Credentials.AuthFilePath())
+		if err != nil {
+			return adapters.RunResult{}, err
+		}
+		auth = m
+		defer auth.cleanup()
+	}
+
+	env := map[string]string{}
+	if v := a.Credentials.EnvVar(); v != "" {
+		env[v] = a.Credentials.Value
+	}
+
 	args := buildCodexArgs(req, containerOutputPath)
 	spec := runner.ContainerSpec{
 		ContainerName: containerName,
@@ -108,7 +125,7 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 			{HostPath: filepath.Join(req.WorkspacePath, "input"), ContainerPath: "/workspace/input", ReadOnly: true},
 			{HostPath: filepath.Join(req.WorkspacePath, "output"), ContainerPath: "/workspace/output", ReadOnly: false},
 		},
-		Env:   map[string]string{a.Credentials.EnvVar(): a.Credentials.Value},
+		Env:   env,
 		Stdin: promptBytes,
 		// Same section 9 exception as the claude adapter: reaching the
 		// OpenAI API requires egress. See claude.go's identical comment
@@ -117,8 +134,31 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 		Limits:        a.Limits,
 	}
 
+	// Read-write so the CLI can rotate its own token; the copy is
+	// discarded after the run and any rotation is written back to the
+	// host explicitly, under the checks in syncBack.
+	if auth != nil {
+		spec.Mounts = append(spec.Mounts, runner.Mount{
+			HostPath: auth.copyFile, ContainerPath: containerAuthPath, ReadOnly: false,
+		})
+	}
+
 	result, runErr := a.Runner.Run(ctx, spec)
 	finished := time.Now()
+
+	// Write a rotated credential back before anything else can fail: the
+	// CLI refreshes its own tokens, and silently discarding a rotation
+	// leaves the operator's stored login stale and eventually broken.
+	// Refusal to write is surfaced, never swallowed - a half-written
+	// auth.json is the one outcome that must not happen quietly.
+	var authRefreshed bool
+	if auth != nil {
+		refreshed, err := auth.syncBack()
+		if err != nil {
+			return adapters.RunResult{}, err
+		}
+		authRefreshed = refreshed
+	}
 
 	base := adapters.RunResult{
 		StartedAt:  started,
@@ -126,7 +166,8 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 		Adapter:    a.Name(),
 		ExitCode:   result.ExitCode,
 		// Kind only - Credentials.Value is never recorded anywhere.
-		AuthMode: string(a.Credentials.Kind),
+		AuthMode:      string(a.Credentials.Kind),
+		AuthRefreshed: authRefreshed,
 		// Usage is deliberately left zero: extracting token counts/cost
 		// would require parsing --json's JSONL event stream, and this
 		// session could not verify that schema without either an

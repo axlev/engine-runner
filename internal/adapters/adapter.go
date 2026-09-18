@@ -179,6 +179,13 @@ type RunResult struct {
 	// steering guarantee rests on.
 	AuthMode string `json:"auth_mode,omitempty"`
 
+	// AuthRefreshed records that the vendor rotated the credential during
+	// this run and the refreshed file was written back to the host. Only
+	// the fact, never the token: a reader needs to know the operator's
+	// stored login changed, because a discarded rotation silently breaks
+	// it and a written one silently changes it.
+	AuthRefreshed bool `json:"auth_refreshed,omitempty"`
+
 	// SafetyFlags are the customization-disabling flags actually passed to
 	// the vendor CLI for this attempt - the mechanism behind "repository
 	// content cannot steer a reviewer". AuthMode implies them via a
