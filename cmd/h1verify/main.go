@@ -88,6 +88,7 @@ func main() {
 	model := flag.String("model", "", "verifier model; empty uses the CLI default (gpt-6-astra as of codex 0.153.2)")
 	effort := flag.String("reasoning-effort", "high", "verifier reasoning effort. Defaults to high to match the arms being judged (h1-opus-wide.yaml: reasoning_level high). Codex's own default is NONE, and a skeptic that is not reasoning agrees with plausible claims - which would make a null result a fact about the configuration, not about cross-vendor verification")
 	only := flag.String("only", "", "comma-separated case ids (default: every eligible case)")
+	subsetPath := flag.String("subset", "", "h1.1-subset/v1 file selecting exact (case_id, arm) pairs. Selection is per PAIR, not per case: an arm can be voided while the other is not, and -only cannot express that")
 	maxCost := flag.Float64("max-cost", 3.0, "per-call cost ceiling (no-op under a subscription, which reports no billable figure)")
 	maxSeconds := flag.Int("max-seconds", 900, "per-call wall clock ceiling")
 	maxStalls := flag.Int("max-stalls", 4, "how many times one verification waits out a rate limit before being left for a later run")
@@ -109,6 +110,13 @@ func main() {
 	check(err)
 	units, skippedVoid, err := enumerate(*runs, voided, splitCSV(*only))
 	check(err)
+	if *subsetPath != "" {
+		var dropped int
+		units, dropped, err = applySubset(units, *subsetPath)
+		check(err)
+		fmt.Printf("h1verify: subset %s selects %d verification(s); %d outside it dropped\n",
+			filepath.Base(*subsetPath), len(units), dropped)
+	}
 	if len(units) == 0 {
 		check(fmt.Errorf("h1verify: no RISKY qualifying findings to verify under %s", *runs))
 	}
@@ -462,4 +470,69 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// subsetDoc is h1.1-subset/v1: the exact (case, arm) pairs to verify. The
+// evaluator picks them, because a balanced pool needs labels and this side
+// does not have them; the file itself carries none - case ids and arms only.
+type subsetDoc struct {
+	SchemaVersion string `json:"schema_version"`
+	Pairs         []struct {
+		CaseID string `json:"case_id"`
+		Arm    string `json:"arm"`
+	} `json:"pairs"`
+}
+
+// applySubset narrows the units to the selected pairs.
+//
+// Per PAIR, not per case, and that distinction is the point: the section 8
+// scan voids one arm's RUN, so a case can be voided for G and live for T.
+// Selecting by case id would pull the voided arm back in - which is how two
+// of the first eleven verifications landed on a scan-voided pair and had to
+// be discarded.
+func applySubset(units []Unit, path string) ([]Unit, int, error) {
+	var doc subsetDoc
+	if err := readJSON(path, &doc); err != nil {
+		return nil, 0, fmt.Errorf("h1verify: reading subset %s: %w", path, err)
+	}
+	if doc.SchemaVersion != "h1.1-subset/v1" {
+		return nil, 0, fmt.Errorf("h1verify: %s is %q, want h1.1-subset/v1", path, doc.SchemaVersion)
+	}
+	if len(doc.Pairs) == 0 {
+		return nil, 0, fmt.Errorf("h1verify: subset %s selects no pairs", path)
+	}
+	want := make(map[string]bool, len(doc.Pairs))
+	for _, p := range doc.Pairs {
+		if p.CaseID == "" || p.Arm == "" {
+			return nil, 0, fmt.Errorf("h1verify: subset %s has a pair missing case_id or arm", path)
+		}
+		want[p.Arm+"/"+p.CaseID] = true
+	}
+	var kept []Unit
+	var dropped int
+	seen := map[string]bool{}
+	for _, u := range units {
+		k := u.Arm + "/" + u.CaseID
+		if want[k] {
+			kept = append(kept, u)
+			seen[k] = true
+			continue
+		}
+		dropped++
+	}
+	// A selected pair with no unit means the pool and the sealed runs
+	// disagree about what is verifiable; running a partial subset silently
+	// would hand back a pool the scorer cannot interpret.
+	var missing []string
+	for k := range want {
+		if !seen[k] {
+			missing = append(missing, k)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return nil, 0, fmt.Errorf("h1verify: subset selects %d pair(s) with no qualifying finding in the sealed runs: %s",
+			len(missing), strings.Join(missing, ", "))
+	}
+	return kept, dropped, nil
 }
