@@ -72,3 +72,37 @@ type Usage struct {
 	// parser that has stopped working.
 	Found bool
 }
+
+// parseStreamError pulls the vendor's own message out of the event stream.
+//
+// codex reports failures as an `error` event on STDOUT, not on stderr:
+//
+//	{"type":"error","message":"You've hit your usage limit. ... try again at 2:30 PM."}
+//
+// stderr carries only "Reading prompt from stdin...", so an adapter error
+// built from stderr alone says "exited with code 1" and nothing else. That
+// is not merely unhelpful - the batch layer decides a stall from a rate
+// limit by MATCHING THE ERROR TEXT, so a usage limit arrives as a plain
+// failure, the case is recorded as failed instead of waited out, and the
+// run burns through every remaining case producing failures. Observed
+// exactly that: six consecutive "failures" that were one rate limit.
+func parseStreamError(stdout []byte) string {
+	sc := bufio.NewScanner(bytes.NewReader(stdout))
+	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	var last string
+	for sc.Scan() {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 || line[0] != '{' {
+			continue
+		}
+		var ev struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(line, &ev) != nil || ev.Type != "error" || ev.Message == "" {
+			continue
+		}
+		last = ev.Message
+	}
+	return last
+}

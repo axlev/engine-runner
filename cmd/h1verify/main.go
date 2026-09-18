@@ -85,6 +85,8 @@ func main() {
 	only := flag.String("only", "", "comma-separated case ids (default: every eligible case)")
 	maxCost := flag.Float64("max-cost", 3.0, "per-call cost ceiling (no-op under a subscription, which reports no billable figure)")
 	maxSeconds := flag.Int("max-seconds", 900, "per-call wall clock ceiling")
+	maxStalls := flag.Int("max-stalls", 4, "how many times one verification waits out a rate limit before being left for a later run")
+	stallFallback := flag.Duration("stall-wait", 20*time.Minute, "how long to wait when the vendor gives no reset time")
 	cap_ := flag.Int("cap", 120, "refuse to start more than this many verifications; a runaway guard, not a budget")
 	workspaceRoot := flag.String("workspace-root", filepath.Join(os.Getenv("HOME"), ".cache", "engine-runner", "runs"), "root for per-attempt workspaces")
 	keepWorkspace := flag.Bool("keep-workspace", false, "keep each verification's workspace instead of reclaiming it on success")
@@ -122,7 +124,7 @@ func main() {
 	check(err)
 	validator := orchestrator.NewSchemaValidator("schemas")
 
-	var done, confirmed, rejected, inconclusive, unparseable, failed int
+	var done, confirmed, rejected, inconclusive, unparseable, failed, stalls int
 	var inTok, outTok int
 	for _, u := range units {
 		dest := filepath.Join(*out, u.RunID+"."+u.FindingID+".h1-verify.json")
@@ -130,7 +132,33 @@ func main() {
 			fmt.Printf("  %s/%s: already verified\n", u.RunID, u.FindingID)
 			continue
 		}
-		rep := verifyOne(context.Background(), adapter, r, validator, u, *cohort, *model, *maxCost, *maxSeconds, *dryRun, *keepWorkspace)
+		// A stall is not a failure: the vendor is rationing, so the unit
+		// is still runnable and must be waited out and retried rather
+		// than sealed as failed. Sealing it would lose the finding AND
+		// keep hammering the limit for every remaining unit.
+		var rep Report
+		for attempt := 1; ; attempt++ {
+			rep = verifyOne(context.Background(), adapter, r, validator, u, *cohort, *model, *maxCost, *maxSeconds, *dryRun, *keepWorkspace)
+			matched, stalled := isStall(rep.Error)
+			if !stalled || attempt > *maxStalls {
+				if stalled {
+					fmt.Printf("  %s/%s: still rate-limited after %d wait(s); leaving for a later run\n", u.RunID, u.FindingID, *maxStalls)
+				}
+				break
+			}
+			w := stallWait(rep.Error, time.Now(), *stallFallback)
+			stalls++
+			fmt.Printf("  %s/%s: rate limited (%q); waiting %s then retrying\n",
+				u.RunID, u.FindingID, matched, fmtWait(w))
+			time.Sleep(w)
+		}
+		if rep.Error != "" {
+			if _, stalled := isStall(rep.Error); stalled {
+				// Not sealed: a rate-limited unit is unverified, not
+				// verified-as-inconclusive, and resume must retry it.
+				continue
+			}
+		}
 		check(writeJSON(dest, rep))
 		done++
 		inTok += rep.InputTokens
@@ -155,6 +183,9 @@ func main() {
 	fmt.Printf("verified %d: CONFIRMED %d  REJECTED %d  INCONCLUSIVE %d (unparseable %d)  failed %d\n",
 		done, confirmed, rejected, inconclusive, unparseable, failed)
 	fmt.Printf("tokens: %d in, %d out (no billable figure is reported under a subscription)\n", inTok, outTok)
+	if stalls > 0 {
+		fmt.Printf("rate-limit waits: %d\n", stalls)
+	}
 	if failed > 0 {
 		fmt.Fprintf(os.Stderr, "h1verify: %d verification(s) FAILED and were sealed with an error; re-run to pick them up\n", failed)
 		os.Exit(1)

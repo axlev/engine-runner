@@ -183,6 +183,13 @@ func (a *Adapter) Run(ctx context.Context, req adapters.RunRequest) (adapters.Ru
 	}
 
 	if runErr != nil {
+		// The vendor's own message is on STDOUT as an error event, not on
+		// stderr. Put it first: the batch layer classifies a rate limit
+		// from the error TEXT, and without it a usage limit reads as a
+		// plain failure and is never waited out.
+		if msg := parseStreamError(result.Stdout); msg != "" {
+			return base, fmt.Errorf("codex: %s: %w (stderr: %s)", msg, runErr, result.Stderr)
+		}
 		return base, fmt.Errorf("codex: %w (stderr: %s)", runErr, result.Stderr)
 	}
 

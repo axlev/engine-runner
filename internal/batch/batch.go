@@ -100,6 +100,11 @@ var resetHintPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)try again in (\d+)\s*(second|minute|hour)s?`),
 	regexp.MustCompile(`(?i)retry[- ]after:?\s*(\d+)`),
 	regexp.MustCompile(`(?i)resets? (?:at|in) (\d+)\s*(second|minute|hour)s?`),
+	// Observed verbatim from a real codex subscription stall, the first
+	// this project has seen: "You've hit your usage limit. ... try again
+	// at 2:30 PM." A wall-clock time, not a duration - the shape none of
+	// the patterns above anticipated.
+	regexp.MustCompile(`(?i)try again at (\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?`),
 }
 
 // IsRateLimited reports whether an error reads as a vendor rate limit, and
