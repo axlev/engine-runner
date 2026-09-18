@@ -329,3 +329,31 @@ func TestVerificationAbsentWithoutDir(t *testing.T) {
 		t.Error("an empty -verify directory was accepted")
 	}
 }
+
+// The loader must read the reports h1verify actually writes, not a shape
+// assumed of it. This is the mismatch that cost the judge pass 11 cases and
+// ~23 paid calls: a parser and a producer that were never introduced.
+func TestVerificationLoaderReadsRealReports(t *testing.T) {
+	dir := os.Getenv("H1VERIFY_REPORTS")
+	if dir == "" {
+		t.Skip("set H1VERIFY_REPORTS to a real cmd/h1verify output directory")
+	}
+	got, sum, err := loadVerification(dir)
+	if err != nil {
+		t.Fatalf("real reports refused: %v", err)
+	}
+	if sum.Verifications == 0 {
+		t.Fatal("no verifications parsed from a directory that has them")
+	}
+	if len(got) == 0 {
+		t.Fatal("no (arm, case) coverage derived; unit.arm or unit.case_id is not being read")
+	}
+	total := 0
+	for _, n := range sum.ByDisposition {
+		total += n
+	}
+	if total != sum.Verifications {
+		t.Errorf("dispositions total %d but %d verifications parsed; some disposition is unread", total, sum.Verifications)
+	}
+	t.Logf("parsed %d verifications, %d covered pairs, dispositions %v", sum.Verifications, sum.CasesCovered, sum.ByDisposition)
+}
