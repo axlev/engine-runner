@@ -50,8 +50,13 @@ ARG VENDOR_BINARY
 # Required: the adapters run with network enabled so the CLI can reach its
 # vendor API, and TLS verification fails without these. Nothing else is
 # installed; a reasoning stage only reads files and talks to the API.
+# bubblewrap: codex sandboxes its own tool calls with bwrap and fails every
+# file read without it - "bubblewrap is unavailable: no system bwrap was
+# found on PATH" - while still exiting zero, so the model answers from the
+# prompt alone and the run looks fine. claude does not use it; it is a few
+# hundred KB and installing it for both keeps one Dockerfile.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates bubblewrap \
     && rm -rf /var/lib/apt/lists/*
 
 # Never run a reasoning stage as root. This is the in-image half of section

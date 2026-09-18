@@ -12,7 +12,7 @@ func TestBuildCodexArgsIncludesIsolationFlags(t *testing.T) {
 	for _, want := range [][]string{
 		{"--skip-git-repo-check"},
 		{"--ephemeral"},
-		{"--sandbox", "read-only"},
+		{"--dangerously-bypass-approvals-and-sandbox"},
 		{"-o", "/workspace/output/reasoner-1.json"},
 	} {
 		if !containsSubsequence(args, want) {

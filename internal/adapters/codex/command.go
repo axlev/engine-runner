@@ -21,11 +21,24 @@ func buildCodexArgs(req adapters.RunRequest, outputPath string) []string {
 		// vendor conversation IDs across cases, stages, or benchmark
 		// variants."
 		"--ephemeral",
-		// The model may read mounted files via shell commands but must
-		// never be allowed to write anywhere; -o writing the final
-		// message is done by the codex process itself, not a
-		// model-invoked, sandboxed tool call, so it is unaffected by this.
-		"--sandbox", "read-only",
+		// Codex sandboxes its own tool calls with bubblewrap, which
+		// cannot create a user namespace inside our container: every
+		// file read fails with "bwrap: No permissions to create new
+		// namespace" and the run still exits zero, so the model answers
+		// from the prompt alone and the result looks like a considered
+		// one. Verified: four verifications returned confident
+		// INCONCLUSIVE verdicts about a repository never read.
+		//
+		// This flag is what codex documents for that case - "intended
+		// solely for running in environments that are externally
+		// sandboxed" - and that is what the container is. The isolation
+		// the read-only sandbox was providing is provided by the mounts
+		// instead, which is where it belongs: input is bind-mounted
+		// read-only so a write cannot reach the bundle, output is the
+		// only writable mount, the process is uid 10001, and the
+		// container is --rm. Loosening the OUTER container to let the
+		// inner sandbox run would have been the worse trade.
+		"--dangerously-bypass-approvals-and-sandbox",
 		// No approval flag: `-a` does not exist in codex-cli 0.153.2 and
 		// the invocation fails at argument parsing with "unexpected
 		// argument '-a' found". `codex exec` already defaults to
